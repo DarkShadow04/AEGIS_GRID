@@ -1,0 +1,1796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AEGIS GRID — Command Center</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #050706; --panel: #0e1512; --panel-2: #121a16; --line: #1f2e26;
+    --green: #39ff9a; --green-dim: #1f8a56; --amber: #d9a441; --red: #e2555a;
+    --blue: #5aa9e6; --magenta: #d15ad1; --text: #d8ddd3; --text-dim: #6f7a70;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "JetBrains Mono","IBM Plex Mono","Courier New",monospace; min-height: 100vh; position: relative; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+  #bg3d { position: fixed; top:0; left:0; width:100%; height:100%; z-index:0; opacity:0.35; pointer-events:none; }
+  .app { position: relative; z-index: 1; }
+
+  .banner { padding: 22px 28px 16px; border-bottom: 1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; background: linear-gradient(180deg, rgba(5,7,6,0.4), rgba(5,7,6,0.85)); backdrop-filter: blur(2px); }
+  .banner h1 { margin:0; font-size:22px; letter-spacing:0.15em; color:var(--green); text-shadow:0 0 18px rgba(57,255,154,0.35), 0 0 34px rgba(226,85,90,0.12); }
+  .banner .tag { font-size:11px; color:var(--text-dim); letter-spacing:0.1em; margin-top:4px; }
+  .status-pills { display:flex; gap:10px; flex-wrap:wrap; }
+  .pill { font-size:10px; letter-spacing:0.08em; padding:5px 10px; border:1px solid var(--line); color:var(--text-dim); text-transform:uppercase; }
+  .pill.on { color:var(--green); border-color:var(--green-dim); }
+  .pill.off { color:var(--red); border-color:#5a2528; }
+
+  .tabs { display:flex; gap:4px; padding:14px 28px 0; border-bottom:1px solid var(--line); background:rgba(5,7,6,0.6); flex-wrap:wrap; }
+  .tab { padding:10px 18px; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-dim); cursor:pointer; border:1px solid transparent; border-bottom:none; }
+  .tab.active { color:var(--green); border-color:var(--line); background:var(--panel); }
+  .view { display:none; padding:24px 28px 40px; }
+  .view.active { display:block; }
+
+  .cli-box { border:1px solid var(--green-dim); background:rgba(14,21,18,0.85); padding:0; max-width:720px; margin-bottom:22px; box-shadow:0 0 30px rgba(57,255,154,0.06); }
+  .cli-box .title { text-align:center; color:var(--green); letter-spacing:0.2em; font-size:13px; padding:10px; border-bottom:1px solid var(--green-dim); text-shadow:0 0 12px rgba(57,255,154,0.4); }
+  .cli-box .body { padding:14px 20px; }
+  .cli-row { display:flex; gap:10px; font-size:13px; padding:3px 0; }
+  .cli-row .k { color:var(--text-dim); width:130px; flex-shrink:0; }
+  .cli-row .v { color:var(--green); font-weight:600; }
+  .cli-row .v.magenta { color:var(--magenta); }
+  .cli-row .v.blue { color:var(--blue); }
+  .cli-divider { border-top:1px solid var(--green-dim); margin:10px 0; opacity:0.5; }
+  .cli-check { color:var(--green); }
+  .cli-check.bad { color:var(--red); }
+
+  .grid { display:grid; gap:20px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: linear-gradient(160deg, var(--panel-2), var(--panel)); border:1px solid var(--line); border-top:2px solid transparent; background-image: linear-gradient(160deg, var(--panel-2), var(--panel)), linear-gradient(90deg, var(--green-dim), var(--red)); background-origin: border-box; background-clip: padding-box, border-box; padding:18px 20px; position:relative; min-width:0; transition: transform 0.25s ease, box-shadow 0.25s ease; box-shadow: 0 1px 0 rgba(57,255,154,0.05) inset, 0 18px 30px -20px rgba(0,0,0,0.7); }
+  /* Flat lift on hover, not a 3D tilt. perspective()+rotateX() on hover forces
+     the browser to composite text on a non-integer pixel grid, which blurs it
+     even with no blur filter applied — a real, well-documented CSS gotcha.
+     translateY + shadow gives the same "lifted" feedback without the blur. */
+  .card:hover { transform: translateY(-3px); box-shadow:0 1px 0 rgba(57,255,154,0.08) inset, 0 26px 40px -18px rgba(0,0,0,0.85), 0 0 0 1px rgba(57,255,154,0.1); }
+  .card h2 { font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-dim); margin:0 0 14px; border-bottom:1px dashed var(--line); padding-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+  .card h2 .n { color:var(--green); margin-right:6px; }
+  .info-btn { background:none; border:1px solid var(--line); color:var(--text-dim); width:22px; height:22px; border-radius:50%; font-size:11px; padding:0; margin:0; cursor:pointer; line-height:1; }
+  .info-btn:hover { border-color:var(--green-dim); color:var(--green); background:none; }
+
+  label { display:block; font-size:11px; color:var(--text-dim); margin-top:10px; }
+  input, select, textarea { width:100%; background:#0a100d; border:1px solid var(--line); color:var(--text); padding:8px; font-family:inherit; font-size:13px; margin-top:4px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--green-dim); }
+  button { margin-top:14px; background:transparent; border:1px solid var(--green-dim); color:var(--green); padding:9px 16px; font-family:inherit; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; }
+  button:hover { background: rgba(57,255,154,0.08); }
+  button.secondary { border-color:var(--line); color:var(--text-dim); }
+  button.danger { border-color:#5a2528; color:var(--red); }
+  button.ask-ai { border-color:var(--magenta); color:var(--magenta); font-size:10px; padding:5px 10px; margin: 8px 0 0; }
+  button.ask-ai:hover { background: rgba(209,90,209,0.1); }
+
+  .metric { display:flex; flex-direction:column; gap:2px; }
+  .metric .val { font-size:26px; color:var(--green); font-weight:600; }
+  .metric .lbl { font-size:10px; color:var(--text-dim); letter-spacing:0.08em; text-transform:uppercase; }
+  .chart-wrap { position:relative; height:160px; margin-top:10px; }
+
+  .finding { border-left:3px solid var(--blue); background:rgba(255,255,255,0.02); padding:8px 12px; margin-bottom:6px; font-size:12px; }
+  .finding.high { border-color:var(--amber); }
+  .finding.critical { border-color:var(--red); }
+  .finding.low { border-color:var(--green-dim); }
+  .finding.medium { border-color: var(--blue); }
+
+  pre { white-space:pre-wrap; font-size:12px; line-height:1.5; color:var(--text); max-height:420px; overflow-y:auto; margin:0; }
+  .status-line { font-size:11px; color:var(--text-dim); margin-top:10px; overflow-wrap: anywhere; word-break: break-word; }
+  .status-line a { color: var(--blue); text-decoration: none; word-break: break-all; }
+  .status-line a:hover { text-decoration: underline; }
+  .scan-status { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .scan-status.running { color: var(--amber); }
+  .scan-status.done { color: var(--green); }
+  .scan-status.failed { color: var(--red); }
+  .full-span { grid-column: 1 / -1; }
+  .validate-msg { font-size:11px; margin-top:6px; }
+  .validate-msg.ok { color: var(--green); }
+  .validate-msg.bad { color: var(--red); }
+
+  .gauge-row { margin-bottom:10px; }
+  .gauge-label { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-bottom:3px; }
+  .gauge-track { width:100%; height:6px; background:#0a100d; border:1px solid var(--line); }
+  .gauge-fill { height:100%; background:var(--green); transition:width 0.4s ease; }
+  .gauge-fill.warn { background:var(--amber); }
+  .gauge-fill.crit { background:var(--red); }
+
+  .terminal-card { background: #060907; }
+  .terminal-body {
+    background: #050705; border: 1px solid var(--line); padding: 12px 14px;
+    font-family: "JetBrains Mono","Courier New",monospace; font-size: 12px; line-height: 1.6;
+    max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .term-line { display: block; }
+  .term-prompt { color: var(--green); }
+  .term-dim { color: var(--text-dim); }
+  .term-out { color: var(--text); }
+  .term-err { color: var(--red); }
+
+  .report-row { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--line); margin-bottom:6px; cursor:pointer; font-size:12px; }
+  .report-row:hover { border-color:var(--green-dim); background: rgba(57,255,154,0.04); }
+  .report-row .rtype { color:var(--green); text-transform:uppercase; font-size:10px; letter-spacing:0.05em; width:110px; flex-shrink:0; }
+  .report-row .rtarget { color:var(--text); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 10px; }
+  .report-row .rtime { color:var(--text-dim); font-size:10px; flex-shrink:0; }
+  .report-row .rdel { color:var(--red); font-size:10px; margin-left:10px; cursor:pointer; flex-shrink:0; }
+
+  /* ---- 3D opening animation, shared by chat / modals / dropdown panels ---- */
+  @keyframes open3d {
+    0%   { opacity: 0; transform: perspective(1200px) rotateX(-22deg) rotateY(14deg) scale(0.55); filter: blur(4px); }
+    55%  { opacity: 1; transform: perspective(1200px) rotateX(4deg) rotateY(-3deg) scale(1.04); filter: blur(0); }
+    100% { opacity: 1; transform: perspective(1200px) rotateX(0) rotateY(0) scale(1); filter: blur(0); }
+  }
+  @keyframes overlayFade { from { opacity: 0; } to { opacity: 1; } }
+  .anim3d { animation: open3d 0.45s cubic-bezier(.2,.9,.25,1) both; transform-origin: bottom right; }
+
+  /* ---- modal (header info / any generic info dialog) ---- */
+  .modal-overlay { position:fixed; inset:0; background:rgba(2,4,3,0.75); z-index:40; display:none; align-items:center; justify-content:center; animation: overlayFade 0.25s ease both; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { width:min(520px, 90vw); max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--green-dim); box-shadow:0 30px 70px rgba(0,0,0,0.7), 0 0 40px rgba(57,255,154,0.08); transform-origin: center; }
+  .modal-box .mhead { padding:14px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .modal-box .mhead h3 { margin:0; font-size:13px; letter-spacing:0.1em; color:var(--green); text-transform:uppercase; }
+  .modal-box .mclose { cursor:pointer; color:var(--text-dim); font-size:16px; border:none; background:none; margin:0; padding:0; }
+  .modal-box .mbody { padding:16px 18px; font-size:12px; line-height:1.6; }
+  .modal-check { border-left:3px solid var(--blue); padding:8px 10px; margin-bottom:8px; background:rgba(255,255,255,0.02); }
+  .modal-check .h { color: var(--text); font-weight:600; font-size:12px; }
+  .modal-check .s { color: var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:0.05em; }
+
+  /* ---- command library dropdown ---- */
+  .cmdlib-wrap { position:relative; }
+  .cmdlib-wrap { position:relative; }
+  .cmdlib-panel { position:absolute; top:100%; left:0; right:0; z-index:50; background:var(--panel); border:1px solid var(--green-dim); max-height:320px; overflow-y:auto; box-shadow:0 20px 50px rgba(0,0,0,0.7); display:none; transform-origin: top center; }
+  .cmdlib-panel.open { display:block; }
+  /* A dropdown positioned absolute within a card can visually overlap the
+     NEXT card in the grid (that's fine, position:absolute takes it out of
+     flow) — but without an explicit z-index, later-DOM-order sibling cards
+     still paint on top of it. Elevating the whole card that contains an
+     open dropdown guarantees it wins regardless of DOM order. */
+  .card:has(.cmdlib-panel.open) { z-index: 50; }
+  .cmdlib-cats { display:flex; gap:4px; padding:8px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel); }
+  .cmdlib-cat { flex:1; text-align:center; padding:6px 4px; font-size:10px; letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; border:1px solid var(--line); color:var(--text-dim); }
+  .cmdlib-cat.active { color:var(--green); border-color:var(--green-dim); background:rgba(57,255,154,0.06); }
+  .cmdlib-item { padding:9px 12px; font-size:11px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .cmdlib-item:hover { background: rgba(57,255,154,0.08); }
+  .cmdlib-item .lbl { color:var(--green); display:block; }
+  .cmdlib-item .cmd { color:var(--text-dim); font-size:10px; }
+
+  /* ---- chat ---- */
+  #chatToggle {
+    position:fixed; bottom:24px; right:24px; z-index:25; width:56px; height:56px;
+    border:none; background:none; cursor:pointer; padding:0;
+    filter: drop-shadow(0 0 14px rgba(57,255,154,0.4));
+    transition: transform 0.2s ease;
+  }
+  #chatToggle:hover { transform: scale(1.08); }
+  #chatPanel {
+    position:fixed; bottom:92px; right:24px; z-index:20; width:380px; max-height:560px;
+    background:var(--panel); border:1px solid var(--green-dim); display:none; flex-direction:column;
+    box-shadow:0 20px 50px rgba(0,0,0,0.6), 0 0 40px rgba(57,255,154,0.08);
+    transition: width 0.25s ease, height 0.25s ease, max-height 0.25s ease, bottom 0.25s ease, right 0.25s ease;
+  }
+  #chatPanel.open { display:flex; }
+  /* Expanded panel is anchored further from the corner (not bottom:5vh
+     flush against the same corner the toggle icon lives in) specifically
+     so it can never cover the icon — the icon needs to stay reachable to
+     collapse/close the panel again. z-index alone would keep it clickable
+     but the icon would visually vanish behind the panel, which is
+     confusing even if technically still clickable. */
+  #chatPanel.expanded { width:680px; max-height:78vh; height:78vh; bottom:100px; right:24px; }
+  #chatHeader { padding:10px 14px; border-bottom:1px solid var(--line); font-size:11px; letter-spacing:0.1em; color:var(--green); display:flex; justify-content:space-between; align-items:center; }
+  #chatHeader select { width:auto; margin:0; font-size:10px; padding:3px 6px; }
+  #chatActionsRow { display:flex; gap:6px; padding:8px 14px; border-bottom:1px dashed var(--line); }
+  #chatActionsRow button { flex:1; margin:0; padding:5px 4px; font-size:10px; }
+  #chatTips { padding:10px 14px; border-bottom: 1px dashed var(--line); font-size:10.5px; color: var(--text-dim); line-height:1.6; }
+  #chatTips b { color: var(--text); }
+  #chatMessages { flex:1; overflow-y:auto; padding:10px 14px; font-size:12px; display:flex; flex-direction:column; gap:8px; }
+  .chat-msg { padding:8px 10px; max-width:90%; white-space:pre-wrap; }
+  .chat-msg.user { align-self:flex-end; background: rgba(57,255,154,0.08); color:var(--text); }
+  .chat-msg.assistant { align-self:flex-start; background: rgba(255,255,255,0.03); color:var(--text); border-left:2px solid var(--green-dim); }
+  .chat-msg.error { align-self:flex-start; color:var(--red); border-left:2px solid var(--red); background: rgba(226,85,90,0.06); }
+  .chat-msg.context { align-self:flex-start; color: var(--magenta); border-left:2px dashed var(--magenta); background: rgba(209,90,209,0.06); font-size:10.5px; }
+  #chatModeRow { display:flex; gap:6px; padding:8px 14px; border-bottom:1px dashed var(--line); }
+  .chat-mode-btn { flex:1; margin:0; padding:5px 4px; font-size:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim); cursor:pointer; }
+  .chat-mode-btn.active { border-color:var(--green); color:var(--green); background:rgba(57,255,154,0.08); }
+  .chat-msg.thinking { align-self:flex-start; color:var(--text-dim); font-size:10.5px; border-left:2px dotted var(--green-dim); font-style:italic; }
+  #chatInputRow { display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); }
+  #chatInputRow input { margin:0; }
+  #chatInputRow button { margin:0; padding:8px 12px; }
+
+  @media (max-width: 900px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    #chatPanel { width:90vw; right:5vw; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg3d"></canvas>
+
+<div class="app">
+<div class="banner">
+  <div>
+    <h1>&#9635; AEGIS GRID</h1>
+    <div class="tag">Unified Security Command Center</div>
+  </div>
+  <div class="status-pills" id="statusPills">
+    <span class="pill" id="pillApi">API ---</span>
+    <span class="pill" id="pillServer">SERVER ---</span>
+    <span class="pill" id="pillTunnel">TUNNEL ---</span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-view="matrix">Control Matrix</div>
+  <div class="tab" data-view="hosting">Server &amp; Tunnel</div>
+  <div class="tab" data-view="security">Security Sessions</div>
+  <div class="tab" data-view="reports">Reports</div>
+  <div class="tab" data-view="quota">Quota</div>
+  <div class="tab" data-view="settings">Settings</div>
+  <div class="tab" data-view="monitor">Access &amp; Limits</div>
+</div>
+
+<!-- ===================== CONTROL MATRIX ===================== -->
+<div class="view active" id="view-matrix">
+  <div class="cli-box">
+    <div class="title">&#9611; AEGIS GRID CONTROL MATRIX &#9611;</div>
+    <div class="body">
+      <div id="cliChecklist"><div class="cli-row"><span class="cli-check">[&#10003;]</span>&nbsp;SYSTEM ONLINE</div></div>
+      <div class="cli-divider"></div>
+      <div class="cli-row"><span class="k">DATE</span><span class="v" id="cliDate">-</span></div>
+      <div class="cli-row"><span class="k">TIME</span><span class="v" id="cliTime">-</span></div>
+      <div class="cli-divider"></div>
+      <div class="cli-row"><span class="k">OS</span><span class="v" id="cliOs">-</span></div>
+      <div class="cli-row"><span class="k">HOST</span><span class="v" id="cliHost">-</span></div>
+      <div class="cli-row"><span class="k">KERNEL</span><span class="v" id="cliKernel">-</span></div>
+      <div class="cli-row"><span class="k">UPTIME</span><span class="v" id="cliUptime">-</span></div>
+      <div class="cli-row"><span class="k">CPU</span><span class="v" id="cliCpu">-</span></div>
+      <div class="cli-row"><span class="k">MEMORY</span><span class="v" id="cliMem">-</span></div>
+      <div class="cli-divider"></div>
+      <div class="cli-row"><span class="k">LOCAL IP</span><span class="v magenta" id="cliIp">-</span></div>
+      <div class="cli-row"><span class="k">NETWORK</span><span class="v magenta" id="cliNet">-</span></div>
+      <div class="cli-divider"></div>
+      <div class="cli-row"><span class="k">SERVER</span><span class="v blue" id="cliServer">-</span></div>
+      <div class="cli-row"><span class="k">TUNNEL</span><span class="v blue" id="cliTunnel">-</span></div>
+    </div>
+  </div>
+
+  <div class="grid grid-4">
+    <div class="card"><h2><span class="n">01</span>CPU</h2><div class="metric"><span class="val" id="cpuVal">--%</span><span class="lbl">cores: <span id="cpuCores">-</span></span></div><div class="chart-wrap"><canvas id="cpuChart"></canvas></div></div>
+    <div class="card"><h2><span class="n">02</span>Memory</h2><div class="metric"><span class="val" id="memVal">--%</span><span class="lbl"><span id="memUsed">-</span> / <span id="memTotal">-</span> GB</span></div><div class="chart-wrap"><canvas id="memChart"></canvas></div></div>
+    <div class="card"><h2><span class="n">03</span>Network</h2><div class="metric"><span class="val" id="netVal" style="font-size:18px;">-- / --</span><span class="lbl">KB/s down / up</span></div><div class="chart-wrap"><canvas id="netChart"></canvas></div></div>
+    <div class="card"><h2><span class="n">04</span>Health</h2><div id="healthList" class="status-line">Checking...</div></div>
+  </div>
+</div>
+
+<!-- ===================== SERVER & TUNNEL ===================== -->
+<div class="view" id="view-hosting">
+  <div class="grid grid-2">
+    <div class="card">
+      <h2><span class="n">01</span>Local Workspace Server</h2>
+      <label>Workspace directory (absolute path)</label>
+      <input id="wsPath" placeholder="/home/user/my-site">
+      <label>Port</label>
+      <input id="wsPort" value="8080">
+      <div style="display:flex; gap:10px;"><button onclick="startServer()">Start</button><button class="danger" onclick="stopServer()">Stop</button></div>
+      <div class="status-line" id="serverStatusLine">Not running.</div>
+      <div class="status-line" id="serverLinkLine"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">02</span>Public Tunnel</h2>
+      <div class="status-line">Requires <code>cloudflared</code> installed on the host and the local server running.</div>
+      <div style="display:flex; gap:10px; margin-top:10px;"><button onclick="startTunnel()">Start Tunnel</button><button class="danger" onclick="stopTunnel()">Stop Tunnel</button></div>
+      <div class="status-line" id="tunnelStatusLine">Offline.</div>
+      <div class="status-line" id="tunnelLinkLine"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SECURITY SESSIONS ===================== -->
+<div class="view" id="view-security">
+  <div class="card full-span terminal-card">
+    <h2><span class="n">&#9635;</span>Live Terminal
+      <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="terminalClear()">&#10005; Clear</button>
+    </h2>
+    <div id="liveTerminal" class="terminal-body"><span class="term-line term-dim">$ waiting for a command...</span></div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2><span class="n">01</span>Full Assessment (Headers + Nmap + AI)
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearCard('fa')">&#10005; Clear</button>
+      </h2>
+      <label>Target URL</label>
+      <input id="fa_url" placeholder="https://example.com">
+      <label>Target IP (optional)</label>
+      <input id="fa_ip" placeholder="203.0.113.5">
+      <label>Nmap profile</label>
+      <select id="fa_profile"><option value="quick">quick</option><option value="default" selected>default</option><option value="full">full</option></select>
+      <label>AI provider</label>
+      <select id="fa_provider"><option value="auto" selected>Auto (fallback chain)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="anyapi">AnyAPI</option><option value="ollama">Ollama (Local)</option></select>
+      <button onclick="runFullAssessment()">Run Assessment</button>
+      <div class="status-line" id="fa_status"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">02</span>Headers &amp; IP Checks
+        <button class="info-btn" onclick="openHeadersInfo()" title="What does this check?">i</button>
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearCard('headers_ip')">&#10005; Clear</button>
+      </h2>
+      <label>Headers — URL</label>
+      <input id="h_url" placeholder="https://example.com">
+      <button onclick="runHeaders()">Check Headers</button> <span class="scan-status" id="h_status"></span>
+      <label>IP reputation — IP</label>
+      <input id="ip_addr" placeholder="203.0.113.5">
+      <button onclick="runIpRep()">Check IP</button> <span class="scan-status" id="ip_status"></span>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">03</span>Nmap — Custom Command
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearCard('nmap')">&#10005; Clear</button>
+      </h2>
+      <label>Target</label>
+      <input id="n_target" placeholder="127.0.0.1">
+      <div class="cmdlib-wrap">
+        <label>Flags &amp; scripts <button type="button" id="cmdLibBtn" class="secondary" style="margin:4px 0 0; padding:4px 8px; font-size:10px;" onclick="toggleCmdLib()">&#128218; Command Library &#9662;</button></label>
+        <input id="n_args" placeholder="-sV -T4" oninput="validateNmapArgs()">
+        <div id="cmdLibPanel" class="cmdlib-panel"></div>
+      </div>
+      <div class="validate-msg" id="n_validate"></div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="runNmapJob()">Run Scan</button>
+        <button class="danger" id="nmapCancelBtn" style="display:none;" onclick="cancelNmapJob()">Cancel</button>
+      </div>
+      <span class="scan-status" id="nmap_status"></span>
+      <div id="nmapProgressWrap" style="display:none; margin-top:8px;">
+        <div class="gauge-track"><div class="gauge-fill" id="nmapProgressFill" style="width:0%"></div></div>
+        <div class="status-line" id="nmapProgressLabel"></div>
+      </div>
+      <div class="status-line">Only known-safe flags are allowed — file I/O, spoofing, and decoy flags are rejected before nmap ever runs. No fixed time limit: full port scans and heavier profiles just run until they finish — cancel anytime.</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">04</span>SSL/TLS, DNS &amp; NEL
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearCard('ssl_dns_nel')">&#10005; Clear</button>
+      </h2>
+      <label>Hostname — TLS certificate check</label>
+      <input id="ssl_host" placeholder="example.com">
+      <button onclick="runSslCheck()">Check Certificate</button> <span class="scan-status" id="ssl_status"></span>
+      <label>Domain — DNS records</label>
+      <input id="dns_domain" placeholder="example.com">
+      <button onclick="runDnsLookup()">Lookup DNS</button> <span class="scan-status" id="dns_status"></span>
+      <label>URL — Network Error Logging headers</label>
+      <input id="nel_url" placeholder="https://example.com">
+      <button onclick="runNelCheck()">Check NEL</button> <span class="scan-status" id="nel_status"></span>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">05</span>Shodan
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearCard('shodan')">&#10005; Clear</button>
+      </h2>
+      <div class="status-line">Membership tier: 100 query credits/mo, 100 scan credits/mo, 16 monitored IPs. Host lookup and DNS resolve are passive reads of Shodan's own database &mdash; free, and they don't touch the target. Search costs query credits. On-demand scan asks Shodan to actively re-crawl a host right now and costs scan credits &mdash; only request it for targets you're authorized to test, same rule as nmap.</div>
+      <div class="grid grid-2" style="margin-top:10px;">
+        <div>
+          <label>Host lookup &mdash; IP</label>
+          <input id="sh_host_ip" placeholder="8.8.8.8">
+          <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; font-weight:400;"><input type="checkbox" id="sh_host_history" style="width:auto;"> include historical banners</label>
+          <button onclick="runShodanHost()">Lookup Host</button> <span class="scan-status" id="sh_host_status"></span>
+        </div>
+        <div>
+          <label>DNS resolve &mdash; hostname(s), comma-separated</label>
+          <input id="sh_dns_hosts" placeholder="example.com, example.org">
+          <button onclick="runShodanDns()">Resolve</button> <span class="scan-status" id="sh_dns_status"></span>
+        </div>
+        <div>
+          <label>Search query</label>
+          <input id="sh_search_query" placeholder="apache country:IN">
+          <label>Facets (optional)</label>
+          <input id="sh_search_facets" placeholder="country,org">
+          <button onclick="runShodanSearch()">Search</button> <span class="scan-status" id="sh_search_status"></span>
+        </div>
+        <div>
+          <label>On-demand scan &mdash; IP(s), comma-separated</label>
+          <input id="sh_scan_ips" placeholder="203.0.113.5">
+          <button onclick="runShodanScan()">Request Scan</button> <span class="scan-status" id="sh_scan_status"></span>
+        </div>
+      </div>
+      <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+        <button class="secondary" onclick="runShodanAccount()">Check Credits Remaining</button>
+        <span class="status-line" id="sh_account_status"></span>
+      </div>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">06</span>Findings Severity Breakdown</h2>
+      <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div style="flex:1; min-width:220px;">
+          <label>View findings from</label>
+          <select id="severitySourceSelect" onchange="loadSeverityFromHistory()"><option value="">— current/last scan —</option></select>
+        </div>
+        <button class="secondary" style="margin-top:14px;" onclick="clearSeverityChart()">Clear</button>
+      </div>
+      <div class="chart-wrap" style="height:200px;"><canvas id="severityChart"></canvas></div>
+      <div class="status-line">Click a bar to see the findings behind it.</div>
+      <div id="severityDetail"></div>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">07</span>Session Output
+        <button class="secondary" style="margin:0; padding:6px 10px; font-size:10px;" onclick="clearSessionOutput()">&#10005; Clear</button>
+      </h2>
+      <div id="results"><span class="status-line">Run a scan to see output here.</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== REPORTS ===================== -->
+<div class="view" id="view-reports">
+  <div class="grid grid-2">
+    <div class="card full-span">
+      <h2><span class="n">&#128193;</span>Session History
+        <button class="secondary" style="margin:0; padding:6px 10px; font-size:10px;" onclick="loadReports()">&#8635; Refresh</button>
+      </h2>
+      <div class="status-line">Every scan you run is saved here. Click a row to view it, or use the download buttons for a formatted TXT or PDF report.</div>
+      <div id="reportsList" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card full-span" id="reportDetailCard" style="display:none;">
+      <h2><span class="n">&#128196;</span>Report Detail
+        <button class="secondary" style="margin:0; padding:6px 10px; font-size:10px;" onclick="closeReportDetail()">Close</button>
+      </h2>
+      <div id="reportDetailMeta" class="status-line"></div>
+      <div style="display:flex; gap:10px; margin: 10px 0;">
+        <button onclick="downloadReportTxt(currentReport)">&#11015; Download TXT</button>
+        <button onclick="downloadReportPdf(currentReport)">&#11015; Download PDF</button>
+        <button class="danger" onclick="deleteReport(currentReport.id)">&#10005; Delete This Report</button>
+      </div>
+      <div style="display:flex; gap:10px; align-items:flex-end;">
+        <div style="flex:1;"><label>Email this report to</label><input id="emailReportInput" placeholder="someone@example.com"></div>
+        <button onclick="emailReport(currentReport)">&#9993; Send</button>
+      </div>
+      <div class="status-line" id="emailReportStatus"></div>
+      <pre id="reportDetailBody"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== QUOTA ===================== -->
+<div class="view" id="view-quota">
+  <div class="status-line" style="margin-bottom:16px;">Live usage against your configured free/standard-tier limits. Calls are skipped automatically before they'd exceed a limit — nothing here can go over 100%.</div>
+  <div class="grid grid-2" id="quotaGrid"></div>
+</div>
+
+<!-- ===================== SETTINGS ===================== -->
+<div class="view" id="view-settings">
+  <div class="grid grid-2">
+    <div class="card full-span"><h2><span class="n">&#9888;</span>API Keys</h2><div class="status-line">Keys are saved locally on this machine (<code>backend/config/secrets.json</code>, gitignored, file permissions locked to owner-only) — never in source, never committed, never sent anywhere except the API they belong to. This dashboard only ever shows a masked preview.</div></div>
+
+    <div class="card"><h2><span class="n">01</span>Anthropic (AI analysis + chat)</h2><div class="status-line" id="key_anthropic_status">checking...</div><label>API key</label><input id="key_anthropic_input" type="password" placeholder="sk-ant-..."><div style="display:flex; gap:10px;"><button onclick="saveKey('anthropic_api_key')">Save</button><button class="secondary" onclick="testKey('anthropic_api_key')">Test</button><button class="danger" onclick="deleteKey('anthropic_api_key')">Remove</button></div><div class="status-line" id="key_anthropic_test"></div></div>
+    <div class="card"><h2><span class="n">02</span>AbuseIPDB (IP reputation)</h2><div class="status-line" id="key_abuseipdb_status">checking...</div><label>API key</label><input id="key_abuseipdb_input" type="password" placeholder="your AbuseIPDB key"><div style="display:flex; gap:10px;"><button onclick="saveKey('abuseipdb_api_key')">Save</button><button class="secondary" onclick="testKey('abuseipdb_api_key')">Test</button><button class="danger" onclick="deleteKey('abuseipdb_api_key')">Remove</button></div><div class="status-line" id="key_abuseipdb_test"></div></div>
+    <div class="card"><h2><span class="n">03</span>VirusTotal (IP/file reputation)</h2><div class="status-line" id="key_virustotal_status">checking...</div><label>API key</label><input id="key_virustotal_input" type="password" placeholder="your VirusTotal key"><div style="display:flex; gap:10px;"><button onclick="saveKey('virustotal_api_key')">Save</button><button class="secondary" onclick="testKey('virustotal_api_key')">Test</button><button class="danger" onclick="deleteKey('virustotal_api_key')">Remove</button></div><div class="status-line" id="key_virustotal_test"></div></div>
+    <div class="card"><h2><span class="n">04</span>Gemini (alt AI analysis)</h2><div class="status-line" id="key_gemini_status">checking...</div><label>API key</label><input id="key_gemini_input" type="password" placeholder="your Gemini key"><div style="display:flex; gap:10px;"><button onclick="saveKey('gemini_api_key')">Save</button><button class="secondary" onclick="testKey('gemini_api_key')">Test</button><button class="danger" onclick="deleteKey('gemini_api_key')">Remove</button></div><div class="status-line" id="key_gemini_test"></div></div>
+    <div class="card"><h2><span class="n">05</span>OpenAI (alt AI analysis)</h2><div class="status-line" id="key_openai_status">checking...</div><label>API key</label><input id="key_openai_input" type="password" placeholder="your OpenAI key"><div style="display:flex; gap:10px;"><button onclick="saveKey('openai_api_key')">Save</button><button class="secondary" onclick="testKey('openai_api_key')">Test</button><button class="danger" onclick="deleteKey('openai_api_key')">Remove</button></div><div class="status-line" id="key_openai_test"></div></div>
+    <div class="card"><h2><span class="n">06</span>Groq (alt AI analysis)</h2><div class="status-line" id="key_groq_status">checking...</div><label>API key</label><input id="key_groq_input" type="password" placeholder="your Groq key"><div style="display:flex; gap:10px;"><button onclick="saveKey('groq_api_key')">Save</button><button class="secondary" onclick="testKey('groq_api_key')">Test</button><button class="danger" onclick="deleteKey('groq_api_key')">Remove</button></div><div class="status-line" id="key_groq_test"></div></div>
+    <div class="card"><h2><span class="n">07</span>OpenRouter (alt AI analysis)</h2><div class="status-line" id="key_openrouter_status">checking...</div><label>API key</label><input id="key_openrouter_input" type="password" placeholder="your OpenRouter key"><div style="display:flex; gap:10px;"><button onclick="saveKey('openrouter_api_key')">Save</button><button class="secondary" onclick="testKey('openrouter_api_key')">Test</button><button class="danger" onclick="deleteKey('openrouter_api_key')">Remove</button></div><div class="status-line" id="key_openrouter_test"></div></div>
+    <div class="card"><h2><span class="n">08</span>Ollama (local failover, no key)</h2><div class="status-line" id="key_ollama_status">checking...</div><label>Base URL</label><input id="key_ollama_input" type="text" placeholder="http://localhost:11434"><div style="display:flex; gap:10px;"><button onclick="saveKey('ollama_base_url')">Save</button><button class="secondary" onclick="testKey('ollama_base_url')">Test</button><button class="danger" onclick="deleteKey('ollama_base_url')">Reset</button></div><div class="status-line" id="key_ollama_test"></div></div>
+    <div class="card"><h2><span class="n">09</span>AnyAPI (alt AI analysis)</h2><div class="status-line" id="key_anyapi_status">checking...</div><label>API key</label><input id="key_anyapi_input" type="password" placeholder="your AnyAPI key"><div style="display:flex; gap:10px;"><button onclick="saveKey('anyapi_api_key')">Save</button><button class="secondary" onclick="testKey('anyapi_api_key')">Test</button><button class="danger" onclick="deleteKey('anyapi_api_key')">Remove</button></div><div class="status-line" id="key_anyapi_test"></div></div>
+    <div class="card"><h2><span class="n">10</span>Shodan (host recon)</h2><div class="status-line" id="key_shodan_status">checking...</div><label>API key</label><input id="key_shodan_input" type="password" placeholder="your Shodan key"><div style="display:flex; gap:10px;"><button onclick="saveKey('shodan_api_key')">Save</button><button class="secondary" onclick="testKey('shodan_api_key')">Test</button><button class="danger" onclick="deleteKey('shodan_api_key')">Remove</button></div><div class="status-line" id="key_shodan_test"></div></div>
+    <div class="card full-span">
+      <h2><span class="n">11</span>Email (SMTP) — for mailing reports</h2>
+      <div class="status-line">Uses your own mail server/account — no third-party email API key needed. Gmail and most providers need an "app password," not your normal login password.</div>
+      <div class="grid grid-2">
+        <div><label>SMTP host</label><input id="smtp_host_input" placeholder="smtp.gmail.com"></div>
+        <div><label>SMTP port</label><input id="smtp_port_input" placeholder="587"></div>
+        <div><label>Username</label><input id="smtp_user_input" placeholder="you@gmail.com"></div>
+        <div><label>Password / app password</label><input id="smtp_password_input" type="password" placeholder="••••••••"></div>
+        <div><label>From address (optional)</label><input id="smtp_from_input" placeholder="defaults to username"></div>
+      </div>
+      <button onclick="saveSmtpSettings()">Save SMTP Settings</button>
+      <div class="status-line" id="smtp_status"></div>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">12</span>Custom Nmap Command Library</h2>
+      <div class="status-line">Save your own flag combinations to reuse from the Command Library dropdown in Security Sessions — validated the same way as any other custom command when actually run.</div>
+      <div class="grid grid-2">
+        <div><label>Label</label><input id="customCmdLabel" placeholder="My favorite recon scan"></div>
+        <div><label>Flags</label><input id="customCmdFlags" placeholder="-sV -sC -O -T4"></div>
+      </div>
+      <button onclick="saveCustomNmapCommand()">Save Command</button>
+      <div class="status-line" id="customCmdStatus"></div>
+      <div id="customCmdList" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">13</span>Backend Connection &amp; Remote Access</h2>
+      <div class="status-line">Auto-detected as <code id="detectedApiLabel"></code>. Only change this if you're pointing the dashboard at a backend on a different host/port than the one serving it.</div>
+      <label>Backend API URL</label><input id="apiUrlInput" value=""><button onclick="setApiUrl()">Update</button>
+      <div class="status-line" style="margin-top:16px; border-top:1px dashed var(--line); padding-top:12px;">
+        <b style="color:var(--text);">Remote access</b> — tunnels this backend (dashboard + API together) so you can use AEGIS GRID from any device over the internet. This is different from the workspace tunnel in Server &amp; Tunnel, which exposes a separate static site.
+      </div>
+      <label>Backend port (must match what you ran uvicorn with)</label>
+      <input id="selfTunnelPort" value="8000">
+      <div style="display:flex; gap:10px;">
+        <button onclick="startSelfTunnel()">Start Remote Access</button>
+        <button class="danger" onclick="stopSelfTunnel()">Stop</button>
+      </div>
+      <div class="status-line" id="selfTunnelStatus">Checking...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== ACCESS & LIMITS ===================== -->
+<div class="view" id="view-monitor">
+  <div class="grid grid-2">
+    <div class="card full-span">
+      <h2><span class="n">&#9881;</span>Limits &amp; Timeouts</h2>
+      <div class="status-line">Adjustable instead of hardcoded — change any value below and it takes effect immediately, no restart needed. If you're getting timeout errors from a slow provider or a big scan, raise the relevant one here first.</div>
+      <div id="runtimeConfigGrid" style="margin-top:10px;">Loading...</div>
+    </div>
+
+    <div class="card full-span">
+      <h2><span class="n">&#128065;</span>Access Log
+        <button class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="loadAccessLog()">&#8635; Refresh</button>
+        <button class="danger" style="margin:0; padding:4px 8px; font-size:10px;" onclick="clearAccessLog()">&#10005; Clear Log</button>
+      </h2>
+      <div class="status-line">Who's hit this server and what they did — most useful once you've tunneled it and shared the link. IP is read from X-Forwarded-For/X-Real-IP first (what most tunnel providers set); if yours doesn't set either, every visitor will show the tunnel's own address instead of their real one — worth verifying once against a device whose real IP you know. Location is an approximate, free IP lookup, not authoritative. Toggle logging entirely, or set retention, in Limits &amp; Timeouts above.</div>
+      <div id="accessLogSummary" class="status-line" style="margin-top:6px;"></div>
+      <div style="overflow-x:auto; margin-top:10px;">
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+          <thead><tr style="text-align:left; color:var(--text-dim); border-bottom:1px solid var(--line);">
+            <th style="padding:4px 6px;">Time</th><th style="padding:4px 6px;">Session</th><th style="padding:4px 6px;">IP</th><th style="padding:4px 6px;">Location</th><th style="padding:4px 6px;">Device</th><th style="padding:4px 6px;">Browser / OS</th><th style="padding:4px 6px;">Action</th>
+          </tr></thead>
+          <tbody id="accessLogBody"><tr><td colspan="7" class="status-line">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.app -->
+
+<!-- ===================== HEADERS INFO MODAL ===================== -->
+<div class="modal-overlay" id="headersInfoOverlay" onclick="if(event.target===this) closeHeadersInfo()">
+  <div class="modal-box anim3d" id="headersInfoBox">
+    <div class="mhead"><h3>What This Scan Checks</h3><button class="mclose" onclick="closeHeadersInfo()">&#10005;</button></div>
+    <div class="mbody" id="headersInfoBody">Loading...</div>
+  </div>
+</div>
+
+<!-- ===================== CHAT ASSISTANT ===================== -->
+<button id="chatToggle" onclick="toggleChat()" title="AEGIS GRID Assistant">
+  <svg width="56" height="56" viewBox="0 0 56 56">
+    <polygon points="28,3 50,15 50,41 28,53 6,41 6,15" fill="#0e1512" stroke="#39ff9a" stroke-width="2"/>
+    <text x="28" y="33" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="16" fill="#39ff9a">&gt;_</text>
+  </svg>
+</button>
+<div id="chatPanel">
+  <div id="chatHeader">
+    <span>&#9635; AEGIS GRID ASSISTANT</span>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <select id="chatProvider"><option value="auto" selected>Auto (fallback chain)</option><option value="anthropic">Claude</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="anyapi">AnyAPI</option><option value="ollama">Ollama (Local)</option></select>
+      <button type="button" class="secondary" style="margin:0; padding:4px 8px; font-size:10px;" onclick="toggleChatSize()" title="Expand/collapse">&#8596;</button>
+    </div>
+  </div>
+  <div id="chatActionsRow">
+    <button type="button" class="secondary" onclick="downloadChatPdf()" title="Download this chat as a PDF">&#8681; PDF</button>
+    <button type="button" class="secondary" onclick="newChat()" title="Start a new chat (offers to save this one first)">&#43; New Chat</button>
+    <button type="button" class="danger" onclick="clearChat()" title="Clear this chat">&#10005; Clear</button>
+  </div>
+  <div id="chatTips">
+    <b>I can help with:</b> interpreting scan findings &middot; drafting a report from your results &middot; explaining log entries &amp; quota state &middot; troubleshooting errors &amp; dependencies &middot; nmap/header doubts on any scan you just ran (use the <b>Ask AI</b> button on a result).
+  </div>
+  <div id="chatModeRow">
+    <button type="button" class="chat-mode-btn" data-mode="short" onclick="setChatMode('short')">SHORT</button>
+    <button type="button" class="chat-mode-btn active" data-mode="descriptive" onclick="setChatMode('descriptive')">DESCRIPTIVE</button>
+    <button type="button" class="chat-mode-btn" data-mode="poc" onclick="setChatMode('poc')">PoC</button>
+  </div>
+  <div id="chatMessages"></div>
+  <div id="chatInputRow">
+    <input id="chatInput" placeholder="Ask about findings, errors, reports..." onkeydown="if(event.key==='Enter')sendChat()">
+    <button onclick="sendChat()">Send</button>
+  </div>
+</div>
+
+<script>
+/* ---------- 3D backdrop ---------- */
+(function initBg3D() {
+  const canvas = document.getElementById('bg3d');
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.z = 22;
+
+  // Duality pair: two interlocking wireframes, counter-rotating, one green
+  // (defense) one red (offense) — echoes the whole tool's red/green framing
+  // instead of a single flat green shape.
+  const geoOuter = new THREE.IcosahedronGeometry(9, 1);
+  const matGreen = new THREE.MeshBasicMaterial({ color: 0x39ff9a, wireframe: true, transparent: true, opacity: 0.45 });
+  const meshGreen = new THREE.Mesh(geoOuter, matGreen); scene.add(meshGreen);
+
+  const geoInner = new THREE.IcosahedronGeometry(6.2, 1);
+  const matRed = new THREE.MeshBasicMaterial({ color: 0xe2555a, wireframe: true, transparent: true, opacity: 0.35 });
+  const meshRed = new THREE.Mesh(geoInner, matRed); scene.add(meshRed);
+
+  const particleCount = 260;
+  const positions = new Float32Array(particleCount*3);
+  const colors = new Float32Array(particleCount*3);
+  const green = new THREE.Color(0x39ff9a), red = new THREE.Color(0xe2555a);
+  for (let i=0;i<particleCount;i++){
+    positions[i*3]=(Math.random()-0.5)*60; positions[i*3+1]=(Math.random()-0.5)*60; positions[i*3+2]=(Math.random()-0.5)*60;
+    const c = (i % 2 === 0) ? green : red;
+    colors[i*3]=c.r; colors[i*3+1]=c.g; colors[i*3+2]=c.b;
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  pGeo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  const pMat = new THREE.PointsMaterial({ size: 0.18, transparent: true, opacity: 0.65, vertexColors: true });
+  const points = new THREE.Points(pGeo, pMat); scene.add(points);
+
+  function animate(){
+    requestAnimationFrame(animate);
+    meshGreen.rotation.x += 0.0012; meshGreen.rotation.y += 0.0018;
+    meshRed.rotation.x -= 0.0016;  meshRed.rotation.y -= 0.0011;
+    points.rotation.y += 0.0004;
+    renderer.render(scene,camera);
+  }
+  animate();
+  window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+})();
+
+// When this dashboard is opened as a local file (file://), default to the
+// standard local dev backend. When it's served BY the backend itself
+// (same origin — this is what makes remote/tunnel access actually work,
+// see main.py's static mount) just use the current origin automatically.
+// Tunneling only the old separate static-file workspace server left the
+// dashboard loading fine remotely while every API call silently pointed
+// at "localhost:8000" on the REMOTE VIEWER's machine — this fixes that.
+let API = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
+let cpuHistory = [], memHistory = [];
+const HISTORY_LEN = 30;
+function setApiUrl() { API = document.getElementById("apiUrlInput").value.trim() || API; }
+document.getElementById("detectedApiLabel").textContent = API;
+document.getElementById("apiUrlInput").value = API;
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-" + tab.dataset.view).classList.add("active");
+    if (tab.dataset.view === "quota") loadQuota();
+    if (tab.dataset.view === "reports") loadReports();
+    if (tab.dataset.view === "security") populateSeverityDropdown();
+    if (tab.dataset.view === "settings") { loadCustomNmapCommands(); pollSelfTunnelStatus(); }
+    if (tab.dataset.view === "monitor") { loadRuntimeConfig(); loadAccessLog(); }
+  });
+});
+
+const chartOpts = { responsive:true, maintainAspectRatio:false, scales:{ x:{display:false}, y:{min:0,max:100,grid:{color:"#1f2e26"},ticks:{color:"#6f7a70",font:{size:9}}} }, plugins:{legend:{display:false}}, elements:{point:{radius:0}} };
+const cpuChart = new Chart(document.getElementById("cpuChart"), { type:"line", data:{labels:[],datasets:[{data:[],borderColor:"#39ff9a",backgroundColor:"rgba(57,255,154,0.08)",fill:true,tension:0.3}]}, options: chartOpts });
+const memChart = new Chart(document.getElementById("memChart"), { type:"line", data:{labels:[],datasets:[{data:[],borderColor:"#5aa9e6",backgroundColor:"rgba(90,169,230,0.08)",fill:true,tension:0.3}]}, options: chartOpts });
+const netChartOpts = { responsive:true, maintainAspectRatio:false, scales:{ x:{display:false}, y:{min:0,grid:{color:"#1f2e26"},ticks:{color:"#6f7a70",font:{size:9}}} }, plugins:{legend:{display:false}}, elements:{point:{radius:0}} };
+const netChart = new Chart(document.getElementById("netChart"), { type:"line", data:{labels:[],datasets:[
+  {data:[],borderColor:"#d15ad1",backgroundColor:"rgba(209,90,209,0.08)",fill:true,tension:0.3},
+  {data:[],borderColor:"#5aa9e6",backgroundColor:"rgba(90,169,230,0.08)",fill:true,tension:0.3}
+]}, options: netChartOpts });
+let netDownHistory = [], netUpHistory = [];
+const severityChart = new Chart(document.getElementById("severityChart"), {
+  type:"bar",
+  data:{labels:["Critical","High","Medium","Low"],datasets:[{data:[0,0,0,0],backgroundColor:["#e2555a","#d9a441","#5aa9e6","#1f8a56"]}]},
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    scales:{x:{grid:{display:false},ticks:{color:"#6f7a70"}},y:{grid:{color:"#1f2e26"},ticks:{color:"#6f7a70"}}},
+    plugins:{legend:{display:false}},
+    onClick: (evt, elements) => {
+      if (!elements.length) return;
+      const idx = elements[0].index;
+      const severity = ["critical","high","medium","low"][idx];
+      showSeverityDetail(severity);
+    }
+  }
+});
+let currentSeverityFindings = [];
+
+function extractFindings(data) {
+  if (!data) return [];
+  if (Array.isArray(data.findings)) return data.findings;
+  if (data.headers && Array.isArray(data.headers.findings)) return data.headers.findings;
+  if (data.findings && data.findings.headers && Array.isArray(data.findings.headers.findings)) return data.findings.headers.findings;
+  return [];
+}
+
+function fmtDate(iso) { const d = new Date(iso); const pad = n => String(n).padStart(2,"0"); return { date: `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` }; }
+
+async function pollTelemetry() {
+  try {
+    const r = await fetch(API + "/api/telemetry"); const t = await r.json();
+    document.getElementById("pillApi").textContent = "API ONLINE"; document.getElementById("pillApi").className = "pill on";
+    document.getElementById("cpuVal").textContent = t.cpu_percent.toFixed(1)+"%";
+    document.getElementById("cpuCores").textContent = t.cpu_cores;
+    document.getElementById("memVal").textContent = t.memory_percent.toFixed(1)+"%";
+    document.getElementById("memUsed").textContent = t.memory_used_gb;
+    document.getElementById("memTotal").textContent = t.memory_total_gb;
+    const { date, time } = fmtDate(t.timestamp);
+    document.getElementById("cliDate").textContent = date; document.getElementById("cliTime").textContent = time;
+    document.getElementById("cliOs").textContent = t.os; document.getElementById("cliHost").textContent = t.host;
+    document.getElementById("cliKernel").textContent = t.kernel; document.getElementById("cliUptime").textContent = t.uptime;
+    document.getElementById("cliCpu").textContent = t.cpu_percent.toFixed(1)+"% ("+t.cpu_cores+" cores)";
+    document.getElementById("cliMem").textContent = t.memory_used_gb+" / "+t.memory_total_gb+" GB";
+    document.getElementById("cliIp").textContent = t.local_ip || "---";
+    document.getElementById("cliNet").textContent = t.network_online ? "ONLINE" : "OFFLINE";
+    cpuHistory.push(t.cpu_percent); if (cpuHistory.length>HISTORY_LEN) cpuHistory.shift();
+    memHistory.push(t.memory_percent); if (memHistory.length>HISTORY_LEN) memHistory.shift();
+    if (t.network) {
+      document.getElementById("netVal").textContent = t.network.download_kbps.toFixed(1) + " / " + t.network.upload_kbps.toFixed(1);
+      netDownHistory.push(t.network.download_kbps); if (netDownHistory.length>HISTORY_LEN) netDownHistory.shift();
+      netUpHistory.push(t.network.upload_kbps); if (netUpHistory.length>HISTORY_LEN) netUpHistory.shift();
+      netChart.data.labels = netDownHistory.map((_,i)=>i);
+      netChart.data.datasets[0].data = netDownHistory;
+      netChart.data.datasets[1].data = netUpHistory;
+      netChart.update("none");
+    }
+    cpuChart.data.labels=cpuHistory.map((_,i)=>i); cpuChart.data.datasets[0].data=cpuHistory; cpuChart.update("none");
+    memChart.data.labels=memHistory.map((_,i)=>i); memChart.data.datasets[0].data=memHistory; memChart.update("none");
+  } catch { document.getElementById("pillApi").textContent="API OFFLINE"; document.getElementById("pillApi").className="pill off"; }
+}
+
+async function pollHealth() {
+  try {
+    const r = await fetch(API + "/api/health"); const h = await r.json();
+    const lines = Object.entries(h.checks).map(([k,v]) => `<div>${v?"&#10003;":"&#10007;"} ${k.replace(/_/g," ")}</div>`).join("");
+    document.getElementById("healthList").innerHTML = lines + `<div style="margin-top:8px;color:var(--green)">Score: ${h.score} — ${h.status}</div>`;
+    document.getElementById("cliChecklist").innerHTML = `
+      <div class="cli-row"><span class="cli-check">[&#10003;]</span>&nbsp;SYSTEM ONLINE</div>
+      <div class="cli-row"><span class="cli-check ${h.checks.nmap_installed?'':'bad'}">[${h.checks.nmap_installed?'&#10003;':'&#10007;'}]</span>&nbsp;NMAP ${h.checks.nmap_installed?'READY':'MISSING'}</div>
+      <div class="cli-row"><span class="cli-check ${h.checks.anthropic_key_set?'':'bad'}">[${h.checks.anthropic_key_set?'&#10003;':'&#10007;'}]</span>&nbsp;AI ANALYSIS ${h.checks.anthropic_key_set?'CONFIGURED':'NOT CONFIGURED'}</div>`;
+  } catch {}
+}
+
+async function pollServerStatus() {
+  try {
+    const r = await fetch(API + "/api/server/status"); const s = await r.json();
+    const pillServer=document.getElementById("pillServer"), pillTunnel=document.getElementById("pillTunnel");
+    if (s.running) {
+      pillServer.textContent="SERVER ON :"+s.port; pillServer.className="pill on";
+      document.getElementById("serverStatusLine").textContent=`Running — pid ${s.pid}, workspace ${s.workspace}`;
+      document.getElementById("serverLinkLine").innerHTML = s.local_url ? `Local URL: <a href="${s.local_url}" target="_blank">${s.local_url}</a>` : "";
+      document.getElementById("cliServer").textContent="ONLINE :"+s.port;
+    } else {
+      pillServer.textContent="SERVER OFF"; pillServer.className="pill off";
+      document.getElementById("serverStatusLine").textContent="Not running.";
+      document.getElementById("serverLinkLine").innerHTML = "";
+      document.getElementById("cliServer").textContent="OFFLINE";
+    }
+    if (s.public_url) {
+      pillTunnel.textContent="TUNNEL ON"; pillTunnel.className="pill on";
+      document.getElementById("tunnelStatusLine").textContent="Tunnel active.";
+      document.getElementById("tunnelLinkLine").innerHTML = `Public URL: <a href="${s.public_url}" target="_blank">${s.public_url}</a>`;
+      document.getElementById("cliTunnel").textContent="ONLINE";
+    } else {
+      pillTunnel.textContent="TUNNEL OFF"; pillTunnel.className="pill off";
+      document.getElementById("tunnelStatusLine").textContent="Offline.";
+      document.getElementById("tunnelLinkLine").innerHTML = "";
+      document.getElementById("cliTunnel").textContent="OFFLINE";
+    }
+  } catch {}
+}
+
+/* ---------- Access & Limits ---------- */
+function escapeHtml(s) {
+  // Log data (paths, forwarded IPs, geoip results) can come from an
+  // untrusted visitor once this is tunneled and shared — never trust it
+  // enough to drop straight into innerHTML.
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+async function loadRuntimeConfig() {
+  const container = document.getElementById("runtimeConfigGrid");
+  try {
+    const cfg = await getJson("/api/settings/runtime-config");
+    const groups = {};
+    for (const [key, meta] of Object.entries(cfg)) { (groups[meta.group] = groups[meta.group] || []).push([key, meta]); }
+    let html = "";
+    for (const [group, items] of Object.entries(groups)) {
+      html += `<h3 style="margin:14px 0 8px; font-size:11px; letter-spacing:0.1em; color:var(--green); text-transform:uppercase;">${escapeHtml(group)}</h3><div class="grid grid-2">`;
+      for (const [key, meta] of items) {
+        const note = meta.note ? `<div class="status-line" style="margin-top:4px;">${escapeHtml(meta.note)}</div>` : "";
+        if (meta.type === "bool") {
+          html += `<div class="card" style="padding:10px;">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:400; margin:0;">
+              <input type="checkbox" id="rc_${key}" style="width:auto;" ${meta.value ? "checked" : ""} onchange="saveRuntimeConfig('${key}', this.checked)">
+              ${escapeHtml(meta.label)}
+            </label>
+            ${note}
+          </div>`;
+        } else {
+          html += `<div class="card" style="padding:10px;">
+            <label>${escapeHtml(meta.label)} <span style="color:var(--text-dim);">(${meta.min}&ndash;${meta.max}${escapeHtml(meta.unit)})</span></label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="number" id="rc_${key}" value="${meta.value}" min="${meta.min}" max="${meta.max}" style="max-width:110px;">
+              <button style="margin:0; padding:6px 10px;" onclick="saveRuntimeConfig('${key}', document.getElementById('rc_${key}').value)">Save</button>
+              <button class="secondary" style="margin:0; padding:6px 10px;" onclick="resetRuntimeConfig('${key}')">Reset</button>
+              <span class="status-line" id="rc_${key}_status"></span>
+            </div>
+            ${note}
+          </div>`;
+        }
+      }
+      html += "</div>";
+    }
+    container.innerHTML = html || "No settings found.";
+  } catch {
+    container.textContent = "Failed to load — is the backend reachable?";
+  }
+}
+
+async function saveRuntimeConfig(key, rawValue) {
+  const value = typeof rawValue === "boolean" ? rawValue : Number(rawValue);
+  const r = await post("/api/settings/runtime-config", { key, value });
+  const statusEl = document.getElementById(`rc_${key}_status`);
+  if (r.error) {
+    if (statusEl) { statusEl.textContent = r.error; statusEl.style.color = "var(--red)"; }
+  } else {
+    if (statusEl) { statusEl.textContent = "Saved."; statusEl.style.color = "var(--green)"; }
+    setTimeout(loadRuntimeConfig, 600);
+  }
+}
+
+async function resetRuntimeConfig(key) {
+  await fetch(API + "/api/settings/runtime-config/" + key, { method: "DELETE" });
+  loadRuntimeConfig();
+}
+
+async function loadAccessLog() {
+  const summaryEl = document.getElementById("accessLogSummary");
+  const body = document.getElementById("accessLogBody");
+  try {
+    const data = await getJson("/api/access-log?limit=200");
+    const s = data.summary;
+    summaryEl.textContent = `${s.total_events} event(s) across ${s.unique_sessions} session(s) (showing latest ${data.events.length}).`;
+    if (!data.events.length) {
+      body.innerHTML = `<tr><td colspan="7" class="status-line">No activity logged yet.</td></tr>`;
+      return;
+    }
+    body.innerHTML = data.events.map(e => {
+      const t = new Date(e.timestamp * 1000).toLocaleString();
+      return `<tr style="border-bottom:1px solid var(--line);">
+        <td style="padding:4px 6px; white-space:nowrap;">${escapeHtml(t)}</td>
+        <td style="padding:4px 6px; font-family:'JetBrains Mono',monospace;">${escapeHtml((e.session_id || "").slice(0, 8))}</td>
+        <td style="padding:4px 6px;">${escapeHtml(e.ip)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(e.location)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(e.device)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(e.browser)} / ${escapeHtml(e.os)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(e.action)}</td>
+      </tr>`;
+    }).join("");
+  } catch {
+    summaryEl.textContent = "Failed to load — is the backend reachable?";
+  }
+}
+
+async function clearAccessLog() {
+  if (!confirm("Clear the entire access log? This can't be undone.")) return;
+  await fetch(API + "/api/access-log", { method: "DELETE" });
+  loadAccessLog();
+}
+
+async function loadQuota() {
+  try {
+    const r = await fetch(API + "/api/quota"); const q = await r.json();
+    const grid = document.getElementById("quotaGrid"); grid.innerHTML = "";
+    for (const [service, endpoints] of Object.entries(q)) {
+      let inner = `<h2>${service.replace(/_/g," ").toUpperCase()}</h2>`;
+      for (const [endpoint, periods] of Object.entries(endpoints)) {
+        for (const [period, stats] of Object.entries(periods)) {
+          const cls = stats.pct>=90?"crit":stats.pct>=70?"warn":"";
+          inner += `<div class="gauge-row"><div class="gauge-label"><span>${endpoint} / ${period}</span><span>${stats.used} / ${stats.limit}</span></div><div class="gauge-track"><div class="gauge-fill ${cls}" style="width:${Math.min(100,stats.pct)}%"></div></div></div>`;
+        }
+      }
+      grid.innerHTML += `<div class="card">${inner}</div>`;
+    }
+  } catch {}
+}
+
+setInterval(pollTelemetry, 2000); setInterval(pollHealth, 5000); setInterval(pollServerStatus, 5000);
+pollTelemetry(); pollHealth(); pollServerStatus(); loadKeyStatus();
+
+async function post(path, body) { const r = await fetch(API+path, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.json(); }
+async function getJson(path) { const r = await fetch(API+path); return r.json(); }
+
+let serverActionInFlight = false, tunnelActionInFlight = false;
+
+async function startServer() {
+  if (serverActionInFlight) return;
+  serverActionInFlight = true;
+  document.getElementById("serverStatusLine").textContent = "● starting...";
+  try { await post("/api/server/start", {workspace:document.getElementById("wsPath").value, port:parseInt(document.getElementById("wsPort").value)||8080}); }
+  finally { serverActionInFlight = false; pollServerStatus(); }
+}
+async function stopServer() {
+  if (serverActionInFlight) return;
+  serverActionInFlight = true;
+  document.getElementById("serverStatusLine").textContent = "● stopping...";
+  try { await post("/api/server/stop", {}); }
+  finally { serverActionInFlight = false; pollServerStatus(); }
+}
+async function startTunnel() {
+  if (tunnelActionInFlight) return;
+  tunnelActionInFlight = true;
+  document.getElementById("tunnelStatusLine").textContent = "● starting tunnel (can take up to 20s)...";
+  try { await post("/api/tunnel/start", {}); }
+  finally { tunnelActionInFlight = false; pollServerStatus(); }
+}
+async function stopTunnel() {
+  if (tunnelActionInFlight) return;
+  tunnelActionInFlight = true;
+  document.getElementById("tunnelStatusLine").textContent = "● stopping tunnel...";
+  try { await post("/api/tunnel/stop", {}); }
+  finally { tunnelActionInFlight = false; pollServerStatus(); }
+}
+
+let lastResult = { label: "", data: null };
+function renderJSON(obj, label) {
+  lastResult = { label, data: obj };
+  document.getElementById("results").innerHTML =
+    "<pre>" + JSON.stringify(obj, null, 2) + "</pre>" +
+    `<button class="ask-ai" onclick="askAI('${label.replace(/'/g,"")}', lastResult.data)">&#129302; Ask AI about this</button>`;
+  populateSeverityDropdown();
+}
+function updateSeverityChart(data) {
+  currentSeverityFindings = extractFindings(data);
+  const counts = { critical:0, high:0, medium:0, low:0 };
+  currentSeverityFindings.forEach(f => { if (counts[f.severity]!==undefined) counts[f.severity]++; });
+  severityChart.data.datasets[0].data = [counts.critical, counts.high, counts.medium, counts.low];
+  severityChart.update();
+  document.getElementById("severityDetail").innerHTML = "";
+}
+
+function clearSeverityChart() {
+  currentSeverityFindings = [];
+  severityChart.data.datasets[0].data = [0,0,0,0];
+  severityChart.update();
+  document.getElementById("severityDetail").innerHTML = "";
+  document.getElementById("severitySourceSelect").value = "";
+}
+
+function clearSessionOutput() {
+  document.getElementById("results").innerHTML = "<span class='status-line'>Run a scan to see output here.</span>";
+  lastResult = { label: "", data: null };
+  clearSeverityChart();
+}
+
+function clearCard(cardId) {
+  // Resets only that card's inputs/status — never touches saved history,
+  // which stays in Reports regardless of what's cleared from view here.
+  const fieldMap = {
+    fa: { inputs: ["fa_url", "fa_ip"], statuses: ["fa_status"] },
+    headers_ip: { inputs: ["h_url", "ip_addr"], statuses: ["h_status", "ip_status"] },
+    nmap: { inputs: ["n_target", "n_args"], statuses: ["nmap_status", "n_validate"] },
+    ssl_dns_nel: { inputs: ["ssl_host", "dns_domain", "nel_url"], statuses: ["ssl_status", "dns_status", "nel_status"] },
+    shodan: { inputs: ["sh_host_ip", "sh_dns_hosts", "sh_search_query", "sh_search_facets", "sh_scan_ips"], statuses: ["sh_host_status", "sh_dns_status", "sh_search_status", "sh_scan_status"] },
+  };
+  const cfg = fieldMap[cardId];
+  if (!cfg) return;
+  cfg.inputs.forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  cfg.statuses.forEach(id => { const el = document.getElementById(id); if (el) { el.textContent = ""; el.className = el.className.replace(/\b(running|done|failed|ok|bad)\b/g, "").trim(); } });
+  if (cardId === "shodan") {
+    const hist = document.getElementById("sh_host_history"); if (hist) hist.checked = false;
+    const acct = document.getElementById("sh_account_status"); if (acct) acct.textContent = "";
+  }
+  if (cardId === "nmap") {
+    document.getElementById("nmapProgressWrap").style.display = "none";
+    document.getElementById("nmapProgressFill").style.width = "0%";
+    document.getElementById("nmapCancelBtn").style.display = "none";
+    activeNmapJob = null;
+    clearTimeout(nmapPollTimer);
+  }
+}
+
+function showSeverityDetail(severity) {
+  const matches = currentSeverityFindings.filter(f => f.severity === severity);
+  const container = document.getElementById("severityDetail");
+  if (!matches.length) { container.innerHTML = `<div class="status-line">No ${severity} findings.</div>`; return; }
+  container.innerHTML = matches.map(f => `
+    <div class="finding ${severity}">
+      <div style="font-weight:600;">${f.header || f.message || "Finding"}</div>
+      <div class="status-line" style="margin-top:2px;">${f.recommendation || f.message || ""}</div>
+    </div>`).join("");
+}
+
+async function populateSeverityDropdown() {
+  try {
+    const list = await getJson("/api/history");
+    const select = document.getElementById("severitySourceSelect");
+    const current = select.value;
+    select.innerHTML = '<option value="">— current/last scan —</option>' +
+      list.slice(0, 30).map(item => {
+        const t = new Date(item.timestamp * 1000).toLocaleString();
+        return `<option value="${item.id}">${item.type} · ${item.target} · ${t}</option>`;
+      }).join("");
+    select.value = current;
+  } catch {}
+}
+
+async function loadSeverityFromHistory() {
+  const id = document.getElementById("severitySourceSelect").value;
+  if (!id) return;
+  const entry = await getJson("/api/history/" + id);
+  if (entry.error) return;
+  updateSeverityChart(entry.data);
+}
+
+/* ---------- Live terminal ---------- */
+function terminalClear() {
+  document.getElementById("liveTerminal").innerHTML = "<span class='term-line term-dim'>$ waiting for a command...</span>";
+}
+function terminalLine(text, cls) {
+  const term = document.getElementById("liveTerminal");
+  const dim = term.querySelector(".term-dim");
+  if (dim && dim.textContent.includes("waiting for a command")) term.innerHTML = "";
+  const el = document.createElement("span");
+  el.className = "term-line " + (cls || "term-out");
+  el.textContent = text;
+  term.appendChild(el);
+  term.scrollTop = term.scrollHeight;
+}
+function terminalCommand(cmdText) {
+  terminalLine("$ " + cmdText, "term-prompt");
+}
+function terminalReplaceLast(lines) {
+  const term = document.getElementById("liveTerminal");
+  let block = term.querySelector("#termLiveBlock");
+  if (!block) {
+    block = document.createElement("div");
+    block.id = "termLiveBlock";
+    term.appendChild(block);
+  }
+  block.innerHTML = lines.map(l => `<span class="term-line term-dim">${l.replace(/</g,"&lt;")}</span>`).join("");
+  term.scrollTop = term.scrollHeight;
+}
+function terminalFinishLive() {
+  const block = document.getElementById("termLiveBlock");
+  if (block) block.removeAttribute("id");
+}
+
+function setScanStatus(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const labels = { running: "● running", done: "✓ done", failed: "✗ failed" };
+  el.textContent = labels[state] || "";
+  el.className = "scan-status " + state;
+}
+
+async function runHeaders() {
+  const url = document.getElementById("h_url").value;
+  setScanStatus("h_status", "running");
+  terminalCommand(`aegisgrid scan headers --url ${url}`);
+  try {
+    const r = await post("/api/scan/headers", {url});
+    renderJSON(r, "Headers scan"); updateSeverityChart({headers:r});
+    setScanStatus("h_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `${r.findings.length} finding(s), ${r.present.length} header(s) present`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("h_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runIpRep() {
+  const ip = document.getElementById("ip_addr").value;
+  setScanStatus("ip_status", "running");
+  terminalCommand(`aegisgrid scan ip-reputation --ip ${ip}`);
+  try {
+    const r = await post("/api/scan/ip-reputation", {ip});
+    renderJSON(r, "IP reputation");
+    setScanStatus("ip_status", "done");
+    terminalLine("lookup complete", "term-out");
+  } catch { setScanStatus("ip_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+
+async function runSslCheck() {
+  const hostname = document.getElementById("ssl_host").value;
+  setScanStatus("ssl_status", "running");
+  terminalCommand(`aegisgrid scan ssl --host ${hostname}`);
+  try {
+    const r = await post("/api/scan/ssl", {hostname});
+    renderJSON(r, "SSL/TLS check"); updateSeverityChart(r);
+    setScanStatus("ssl_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `protocol ${r.protocol}, ${r.days_remaining} day(s) until expiry`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("ssl_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runDnsLookup() {
+  const domain = document.getElementById("dns_domain").value;
+  setScanStatus("dns_status", "running");
+  terminalCommand(`aegisgrid scan dns --domain ${domain}`);
+  try {
+    const r = await post("/api/scan/dns", {domain});
+    renderJSON(r, "DNS recon"); updateSeverityChart(r);
+    setScanStatus("dns_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `resolved ${Object.keys(r.records||{}).length} record type(s)`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("dns_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runNelCheck() {
+  const url = document.getElementById("nel_url").value;
+  setScanStatus("nel_status", "running");
+  terminalCommand(`aegisgrid scan nel --url ${url}`);
+  try {
+    const r = await post("/api/scan/nel", {url});
+    renderJSON(r, "NEL check"); updateSeverityChart(r);
+    setScanStatus("nel_status", r.error ? "failed" : "done");
+    terminalLine(r.error || "NEL check complete", r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("nel_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+
+/* ---------- Shodan ---------- */
+async function runShodanHost() {
+  const ip = document.getElementById("sh_host_ip").value;
+  const hist = document.getElementById("sh_host_history").checked;
+  setScanStatus("sh_host_status", "running");
+  terminalCommand(`aegisgrid shodan host --ip ${ip}${hist ? " --history" : ""}`);
+  try {
+    const r = await getJson(`/api/shodan/host/${encodeURIComponent(ip)}?with_history=${hist}`);
+    renderJSON(r, "Shodan host lookup"); updateSeverityChart(r);
+    setScanStatus("sh_host_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `${(r.ports||[]).length} port(s), ${(r.vulns||[]).length} known vuln(s)`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("sh_host_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runShodanDns() {
+  const hostnames = document.getElementById("sh_dns_hosts").value;
+  setScanStatus("sh_dns_status", "running");
+  terminalCommand(`aegisgrid shodan dns-resolve --hostnames ${hostnames}`);
+  try {
+    const r = await post("/api/shodan/dns/resolve", {hostnames});
+    renderJSON(r, "Shodan DNS resolve");
+    setScanStatus("sh_dns_status", r.error ? "failed" : "done");
+    terminalLine(r.error || "resolved", r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("sh_dns_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runShodanSearch() {
+  const query = document.getElementById("sh_search_query").value;
+  const facets = document.getElementById("sh_search_facets").value.trim();
+  setScanStatus("sh_search_status", "running");
+  terminalCommand(`aegisgrid shodan search --query "${query}"`);
+  try {
+    const r = await post("/api/shodan/search", {query, facets: facets || null, page: 1});
+    renderJSON(r, "Shodan search");
+    setScanStatus("sh_search_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `${r.total ?? 0} total match(es), ${(r.results||[]).length} on this page`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("sh_search_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runShodanScan() {
+  const ips = document.getElementById("sh_scan_ips").value;
+  setScanStatus("sh_scan_status", "running");
+  terminalCommand(`aegisgrid shodan scan --ips ${ips}`);
+  try {
+    const r = await post("/api/shodan/scan", {ips});
+    renderJSON(r, "Shodan scan request");
+    setScanStatus("sh_scan_status", r.error ? "failed" : "done");
+    terminalLine(r.error || `scan requested — id ${r.id || "n/a"}`, r.error ? "term-err" : "term-out");
+  } catch { setScanStatus("sh_scan_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+async function runShodanAccount() {
+  const el = document.getElementById("sh_account_status");
+  el.textContent = "checking...";
+  try {
+    const r = await getJson("/api/shodan/account");
+    el.textContent = r.error ? r.error : `Plan: ${r.plan} — query credits: ${r.query_credits}, scan credits: ${r.scan_credits}, monitored IPs: ${r.monitored_ips}`;
+  } catch { el.textContent = "Request failed."; }
+}
+
+let activeNmapJob = null, nmapPollTimer = null;
+
+async function runNmapJob() {
+  const target = document.getElementById("n_target").value;
+  const args = document.getElementById("n_args").value;
+  setScanStatus("nmap_status", "running");
+  document.getElementById("nmapProgressWrap").style.display = "block";
+  document.getElementById("nmapProgressFill").style.width = "0%";
+  document.getElementById("nmapProgressLabel").textContent = "Starting...";
+  document.getElementById("nmapCancelBtn").style.display = "inline-block";
+  terminalCommand(`nmap ${args} ${target}`);
+
+  try {
+    const start = await post("/api/scan/nmap/job", { target, args });
+    if (start.error) {
+      renderJSON(start, "Nmap scan (" + args + ")");
+      setScanStatus("nmap_status", "failed");
+      document.getElementById("nmapProgressWrap").style.display = "none";
+      document.getElementById("nmapCancelBtn").style.display = "none";
+      terminalLine(start.error, "term-err");
+      return;
+    }
+    activeNmapJob = start.job_id;
+    pollNmapJob();
+  } catch { setScanStatus("nmap_status", "failed"); terminalLine("request failed", "term-err"); }
+}
+
+async function pollNmapJob() {
+  if (!activeNmapJob) return;
+  try {
+    const job = await getJson("/api/scan/nmap/job/" + activeNmapJob);
+    if (job.error) { setScanStatus("nmap_status", "failed"); terminalLine(job.error, "term-err"); return; }
+
+    // Real live output — actual nmap stdout as it runs, streamed from the
+    // same log_tail the background job already captures for progress.
+    if (job.log_tail && job.log_tail.length) terminalReplaceLast(job.log_tail);
+
+    const pct = job.progress != null ? job.progress : null;
+    document.getElementById("nmapProgressFill").style.width = (pct != null ? pct : 8) + "%";
+    document.getElementById("nmapProgressLabel").textContent = pct != null
+      ? `${pct.toFixed(1)}% — ${job.status}`
+      : `running — elapsed ${Math.round(Date.now()/1000 - job.started_at)}s (nmap hasn't reported a percentage yet)`;
+
+    if (job.status === "running") {
+      nmapPollTimer = setTimeout(pollNmapJob, 1500);
+      return;
+    }
+
+    // finished (done / failed / cancelled)
+    document.getElementById("nmapCancelBtn").style.display = "none";
+    terminalFinishLive();
+    if (job.status === "done") {
+      setScanStatus("nmap_status", "done");
+      document.getElementById("nmapProgressFill").style.width = "100%";
+      document.getElementById("nmapProgressLabel").textContent = "done.";
+      renderJSON(job.result, "Nmap scan (" + job.command + ")");
+      terminalLine("scan complete", "term-out");
+    } else {
+      setScanStatus("nmap_status", "failed");
+      document.getElementById("nmapProgressLabel").textContent = job.status;
+      renderJSON({ error: job.error || "Scan " + job.status }, "Nmap scan (" + job.command + ")");
+      terminalLine(job.error || ("scan " + job.status), "term-err");
+    }
+    activeNmapJob = null;
+  } catch { setScanStatus("nmap_status", "failed"); }
+}
+
+async function cancelNmapJob() {
+  if (!activeNmapJob) return;
+  clearTimeout(nmapPollTimer);
+  await fetch(API + "/api/scan/nmap/job/" + activeNmapJob, { method: "DELETE" });
+  setScanStatus("nmap_status", "failed");
+  document.getElementById("nmapProgressLabel").textContent = "cancelled.";
+  document.getElementById("nmapCancelBtn").style.display = "none";
+  activeNmapJob = null;
+}
+
+let validateTimer = null;
+function validateNmapArgs() {
+  clearTimeout(validateTimer);
+  const el = document.getElementById("n_validate");
+  const args = document.getElementById("n_args").value;
+  if (!args.trim()) { el.textContent = ""; return; }
+  validateTimer = setTimeout(async () => {
+    const r = await post("/api/scan/nmap/validate", {target:"x", args});
+    el.textContent = r.ok ? "\u2713 valid" : "\u2717 " + r.error;
+    el.className = "validate-msg " + (r.ok ? "ok" : "bad");
+  }, 400);
+}
+
+const NMAP_COMMANDS = {
+  basic: [
+    {label:"Quick Scan (top 100 ports)", cmd:"-F -T4"},
+    {label:"Default Scan (service versions)", cmd:"-sV -T4"},
+    {label:"Full Port Range", cmd:"-p- -T4"},
+    {label:"OS Detection", cmd:"-O"},
+    {label:"Host Discovery Only (ping sweep)", cmd:"-sn"},
+    {label:"Common Web Ports", cmd:"-p 80,443,8080,8443 -sV"},
+    {label:"Top 20 Ports Fast", cmd:"--top-ports 20 -sV"},
+    {label:"Verbose + Reason Output", cmd:"-v --reason"},
+  ],
+  aggressive: [
+    {label:"Aggressive Scan (OS+scripts+version+traceroute)", cmd:"-A -T4"},
+    {label:"Deep Recon (version+scripts+OS)", cmd:"-sV -sC -O -T4"},
+    {label:"Stealth SYN Scan", cmd:"-sS -T4"},
+    {label:"UDP Top 100", cmd:"-sU --top-ports 100"},
+    {label:"No Ping (host filters ICMP)", cmd:"-Pn -T4"},
+    {label:"Full Port Range, Aggressive Timing", cmd:"-p- -T4 -sV"},
+  ],
+  vuln: [
+    {label:"Vulnerability Scripts (NSE vuln)", cmd:"--script vuln -sV -O"},
+    {label:"Default Safe Scripts (NSE)", cmd:"-sC"},
+    {label:"Safe Scripts Only", cmd:"--script safe"},
+    {label:"Auth Scripts", cmd:"--script auth"},
+    {label:"Broadcast Discovery", cmd:"--script broadcast"},
+    {label:"HTTP Enumeration", cmd:"-p80,443 --script http-enum"},
+  ],
+};
+let cmdlibCategory = "basic";
+let customCmdCache = [];
+
+async function buildCmdLib() {
+  const panel = document.getElementById("cmdLibPanel");
+  const cats = [["basic","Basic"],["aggressive","Aggressive"],["vuln","Vuln + Script"],["custom","Custom"]];
+  // Tab bar and items container are built ONCE and kept stable — switching
+  // categories only ever replaces #cmdLibItems' contents, never the tab bar
+  // itself. Rebuilding the whole panel (tabs included) on every switch used
+  // to destroy the very tab element the user just clicked mid-event, which
+  // made the outside-click-to-close listener misfire and close the panel
+  // immediately after opening the new category.
+  if (!panel.querySelector(".cmdlib-cats")) {
+    panel.innerHTML = `<div class="cmdlib-cats">${cats.map(([key,label]) =>
+      `<div class="cmdlib-cat" data-cat="${key}" onclick="switchCmdlibCategory('${key}')">${label}</div>`).join("")}</div>
+      <div id="cmdLibItems"></div>`;
+  }
+  panel.querySelectorAll(".cmdlib-cat").forEach(el => el.classList.toggle("active", el.dataset.cat === cmdlibCategory));
+
+  if (cmdlibCategory === "custom") {
+    try { customCmdCache = await getJson("/api/settings/nmap-commands"); } catch { customCmdCache = []; }
+    document.getElementById("cmdLibItems").innerHTML = customCmdCache.length
+      ? customCmdCache.map(c => `<div class="cmdlib-item" onclick="selectCmd('${c.cmd.replace(/'/g,"")}')"><span class="lbl">${c.label}</span><span class="cmd">nmap ${c.cmd} &lt;target&gt;</span></div>`).join("")
+      : `<div class="status-line" style="padding:12px;">No custom commands yet — add some in Settings &rarr; Custom Nmap Command Library.</div>`;
+  } else {
+    document.getElementById("cmdLibItems").innerHTML = NMAP_COMMANDS[cmdlibCategory].map(c =>
+      `<div class="cmdlib-item" onclick="selectCmd('${c.cmd.replace(/'/g,"")}')"><span class="lbl">${c.label}</span><span class="cmd">nmap ${c.cmd} &lt;target&gt;</span></div>`).join("");
+  }
+}
+function switchCmdlibCategory(key) { cmdlibCategory = key; buildCmdLib(); }
+
+function toggleCmdLib() {
+  const panel = document.getElementById("cmdLibPanel");
+  if (panel.classList.contains("open")) { panel.classList.remove("open","anim3d"); return; }
+  buildCmdLib();
+  panel.classList.remove("anim3d"); void panel.offsetWidth;
+  panel.classList.add("open","anim3d");
+}
+function selectCmd(cmd) {
+  document.getElementById("n_args").value = cmd;
+  document.getElementById("cmdLibPanel").classList.remove("open","anim3d");
+  validateNmapArgs();
+}
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("cmdLibPanel");
+  const btn = document.getElementById("cmdLibBtn");
+  // Use composedPath() instead of panel.contains(e.target): a click on a
+  // category tab rebuilds the panel's innerHTML synchronously, detaching
+  // the clicked element from the DOM before this listener runs — at that
+  // point panel.contains(e.target) is false even though the click
+  // genuinely originated inside the panel. composedPath() is captured at
+  // dispatch time, before any such mutation, so it's immune to this.
+  const path = e.composedPath ? e.composedPath() : [];
+  if (panel && panel.classList.contains("open") && !path.includes(panel) && e.target !== btn) {
+    panel.classList.remove("open","anim3d");
+  }
+});
+
+async function runFullAssessment() {
+  const status = document.getElementById("fa_status");
+  status.textContent = "● running scan + AI analysis...";
+  status.className = "status-line";
+  status.style.color = "var(--amber)";
+  const body = { url: document.getElementById("fa_url").value, ip: document.getElementById("fa_ip").value||null, nmap_profile: document.getElementById("fa_profile").value, ai_provider: document.getElementById("fa_provider").value };
+  try {
+    const data = await post("/api/assess/full", body);
+    status.textContent = "✓ done."; status.style.color = "var(--green)";
+    updateSeverityChart(data.findings);
+    lastResult = { label: "Full assessment of " + body.url, data };
+    let html = "";
+    if (data.ai_analysis && data.ai_analysis.analysis) html += "<div class='status-line' style='color:var(--green); font-size:12px; margin-bottom:8px;'>AI RISK SUMMARY ("+(data.ai_analysis.provider||"")+")</div><pre>"+data.ai_analysis.analysis+"</pre>";
+    else if (data.ai_analysis && data.ai_analysis.error) html += "<div class='finding high'><div>AI analysis unavailable</div><div class='status-line'>"+data.ai_analysis.error+"</div></div>";
+    html += "<div class='status-line' style='color:var(--green); font-size:12px; margin:12px 0 8px;'>RAW FINDINGS</div><pre>"+JSON.stringify(data.findings, null, 2)+"</pre>";
+    html += `<button class="ask-ai" onclick="askAI(lastResult.label, lastResult.data)">&#129302; Ask AI about this</button>`;
+    document.getElementById("results").innerHTML = html;
+  } catch { status.textContent = "✗ failed — check backend connection."; status.style.color = "var(--red)"; }
+}
+
+/* ---------- Headers info modal ---------- */
+async function openHeadersInfo() {
+  const overlay = document.getElementById("headersInfoOverlay");
+  const box = document.getElementById("headersInfoBox");
+  const body = document.getElementById("headersInfoBody");
+  body.innerHTML = "Loading...";
+  overlay.classList.add("open");
+  box.classList.remove("anim3d"); void box.offsetWidth; box.classList.add("anim3d");
+  try {
+    const info = await getJson("/api/scan/headers/info");
+    body.innerHTML = info.map(c => `<div class="modal-check"><div class="h">${c.header}</div><div class="s">${c.severity}</div><div style="margin-top:4px;">${c.why_it_matters}</div></div>`).join("");
+  } catch { body.innerHTML = "Could not load — is the backend running?"; }
+}
+function closeHeadersInfo() { document.getElementById("headersInfoOverlay").classList.remove("open"); }
+
+/* ---------- Settings ---------- */
+async function loadKeyStatus() {
+  try {
+    const r = await fetch(API + "/api/settings/keys"); const s = await r.json();
+    const map = { anthropic_api_key:"anthropic", abuseipdb_api_key:"abuseipdb", virustotal_api_key:"virustotal", gemini_api_key:"gemini", openai_api_key:"openai", groq_api_key:"groq", openrouter_api_key:"openrouter", ollama_base_url:"ollama", anyapi_api_key:"anyapi", shodan_api_key:"shodan" };
+    for (const [name, short] of Object.entries(map)) {
+      const el = document.getElementById("key_"+short+"_status"); if (!el) continue;
+      el.textContent = s[name].configured ? ("Configured ("+s[name].preview+") — source: "+s[name].source) : "Not configured.";
+    }
+  } catch {}
+}
+async function saveSmtpSettings() {
+  const body = {
+    smtp_host: document.getElementById("smtp_host_input").value,
+    smtp_port: document.getElementById("smtp_port_input").value,
+    smtp_user: document.getElementById("smtp_user_input").value,
+    smtp_password: document.getElementById("smtp_password_input").value,
+    smtp_from: document.getElementById("smtp_from_input").value,
+  };
+  await post("/api/settings/keys", body);
+  document.getElementById("smtp_status").textContent = "Saved.";
+  document.getElementById("smtp_password_input").value = "";
+}
+
+/* ---------- Custom nmap command library ---------- */
+async function loadCustomNmapCommands() {
+  try {
+    const list = await getJson("/api/settings/nmap-commands");
+    const container = document.getElementById("customCmdList");
+    if (!container) return;
+    if (!list.length) { container.innerHTML = "<div class='status-line'>No custom commands saved yet.</div>"; return; }
+    container.innerHTML = list.map(c => `<div class="report-row">
+      <span class="rtarget">${c.label} — <code>${c.cmd}</code></span>
+      <span class="rdel" onclick="deleteCustomNmapCommand('${c.id}')">&#10005;</span>
+    </div>`).join("");
+  } catch {}
+}
+async function saveCustomNmapCommand() {
+  const label = document.getElementById("customCmdLabel").value.trim();
+  const cmd = document.getElementById("customCmdFlags").value.trim();
+  const statusEl = document.getElementById("customCmdStatus");
+  if (!label || !cmd) { statusEl.textContent = "Enter both a label and flags."; return; }
+  const r = await post("/api/settings/nmap-commands", { label, cmd });
+  if (r.error) { statusEl.textContent = r.error; return; }
+  statusEl.textContent = "Saved.";
+  document.getElementById("customCmdLabel").value = "";
+  document.getElementById("customCmdFlags").value = "";
+  loadCustomNmapCommands();
+}
+async function deleteCustomNmapCommand(id) {
+  await fetch(API + "/api/settings/nmap-commands/" + id, { method: "DELETE" });
+  loadCustomNmapCommands();
+}
+
+/* ---------- Self-tunnel (remote access) ---------- */
+async function pollSelfTunnelStatus() {
+  try {
+    const s = await getJson("/api/tunnel/self/status");
+    const el = document.getElementById("selfTunnelStatus");
+    if (!el) return;
+    el.innerHTML = s.running
+      ? `Live at <a href="${s.public_url}" target="_blank">${s.public_url}</a> — open this on any device.`
+      : "Not running.";
+  } catch {}
+}
+async function startSelfTunnel() {
+  const port = parseInt(document.getElementById("selfTunnelPort").value) || 8000;
+  document.getElementById("selfTunnelStatus").textContent = "Starting tunnel (can take up to 20s)...";
+  const r = await post("/api/tunnel/self/start", { port });
+  if (r.error) { document.getElementById("selfTunnelStatus").textContent = r.error; return; }
+  pollSelfTunnelStatus();
+}
+async function stopSelfTunnel() {
+  document.getElementById("selfTunnelStatus").textContent = "Stopping...";
+  await post("/api/tunnel/self/stop", {});
+  pollSelfTunnelStatus();
+}
+
+async function saveKey(name) {
+  const map = { anthropic_api_key:"anthropic", abuseipdb_api_key:"abuseipdb", virustotal_api_key:"virustotal", gemini_api_key:"gemini", openai_api_key:"openai", groq_api_key:"groq", openrouter_api_key:"openrouter", ollama_base_url:"ollama", anyapi_api_key:"anyapi", shodan_api_key:"shodan" };
+  const shortName = map[name]; const value = document.getElementById("key_"+shortName+"_input").value;
+  const body = {}; body[name] = value; await post("/api/settings/keys", body);
+  document.getElementById("key_"+shortName+"_input").value = ""; loadKeyStatus();
+}
+async function deleteKey(name) { await fetch(API+"/api/settings/keys/"+name, {method:"DELETE"}); loadKeyStatus(); }
+async function testKey(name) {
+  const map = { anthropic_api_key:"anthropic", abuseipdb_api_key:"abuseipdb", virustotal_api_key:"virustotal", gemini_api_key:"gemini", openai_api_key:"openai", groq_api_key:"groq", openrouter_api_key:"openrouter", ollama_base_url:"ollama", anyapi_api_key:"anyapi", shodan_api_key:"shodan" };
+  const shortName = map[name]; const out = document.getElementById("key_"+shortName+"_test");
+  out.textContent = "testing...";
+  const r = await fetch(API+"/api/settings/keys/test", {method:"POST"}); const results = await r.json(); const res = results[name];
+  out.textContent = res.ok ? ("\u2713 "+res.message) : ("\u2717 "+res.message);
+  out.style.color = res.ok ? "var(--green)" : "var(--red)";
+}
+
+/* ---------- Chat ---------- */
+let chatHistory = [];
+let pendingAIContext = null;
+let chatMode = "descriptive";
+function setChatMode(mode) {
+  chatMode = mode;
+  document.querySelectorAll(".chat-mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+}
+function toggleChat() {
+  const panel = document.getElementById("chatPanel");
+  if (panel.classList.contains("open")) { panel.classList.remove("open"); return; }
+  openChatWithAnimation();
+}
+function toggleChatSize() {
+  document.getElementById("chatPanel").classList.toggle("expanded");
+}
+function openChatWithAnimation() {
+  const panel = document.getElementById("chatPanel");
+  panel.classList.remove("anim3d"); void panel.offsetWidth;
+  panel.classList.add("open","anim3d");
+}
+function addChatMsg(role, text) {
+  const el = document.createElement("div"); el.className = "chat-msg " + role; el.textContent = text;
+  document.getElementById("chatMessages").appendChild(el);
+  document.getElementById("chatMessages").scrollTop = 999999;
+}
+
+function buildChatPdfDoc() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const marginX = 14;
+  let y = 18;
+
+  doc.setFont("courier", "bold"); doc.setFontSize(16); doc.setTextColor(20, 120, 80);
+  doc.text("AEGIS GRID CHAT TRANSCRIPT", marginX, y); y += 10;
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 8;
+
+  doc.setFont("courier", "normal"); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
+  const meta = [["Generated", new Date().toLocaleString()], ["Messages", String(chatHistory.length)], ["Mode", chatMode]];
+  meta.forEach(([k, v]) => {
+    doc.setFont("courier", "bold"); doc.text(k + ":", marginX, y);
+    doc.setFont("courier", "normal"); doc.text(String(v), marginX + 32, y);
+    y += 6;
+  });
+
+  y += 4;
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 8;
+
+  doc.setFontSize(9);
+  for (const msg of chatHistory) {
+    if (y > 275) { doc.addPage(); y = 18; }
+    const isUser = msg.role === "user";
+    doc.setFont("courier", "bold"); doc.setTextColor(isUser ? 20 : 40, isUser ? 120 : 100, isUser ? 80 : 200);
+    doc.text(isUser ? "YOU:" : "ASSISTANT:", marginX, y); y += 5;
+
+    doc.setFont("courier", "normal"); doc.setTextColor(30, 30, 30);
+    const wrapped = doc.splitTextToSize(msg.content, 182);
+    for (const line of wrapped) {
+      if (y > 280) { doc.addPage(); y = 18; }
+      doc.text(line, marginX, y);
+      y += 4.5;
+    }
+    y += 4;
+  }
+
+  if (y > 270) { doc.addPage(); y = 18; }
+  y += 4;
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 6;
+  doc.setFont("courier", "italic"); doc.setFontSize(8); doc.setTextColor(120);
+  doc.text("Generated by AEGIS GRID — Unified Security Command Center", marginX, y);
+
+  return doc;
+}
+
+function downloadChatPdf() {
+  if (!chatHistory.length) { alert("Nothing to save yet — this chat is empty."); return; }
+  const doc = buildChatPdfDoc();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  doc.save(`aegisgrid_chat_${stamp}.pdf`);
+}
+
+function clearChat() {
+  if (chatHistory.length && !confirm("Clear this chat? This can't be undone — download a PDF first if you want to keep it.")) return;
+  chatHistory = [];
+  pendingAIContext = null;
+  document.getElementById("chatMessages").innerHTML = "";
+}
+
+function newChat() {
+  if (chatHistory.length && confirm("Save this chat as a PDF before starting a new one?")) downloadChatPdf();
+  chatHistory = [];
+  pendingAIContext = null;
+  document.getElementById("chatMessages").innerHTML = "";
+}
+
+function askAI(label, data) {
+  const trimmed = JSON.stringify(data, null, 2).slice(0, 3000);
+  pendingAIContext = `Context — ${label} result:\n${trimmed}`;
+  openChatWithAnimation();
+  addChatMsg("context", "\u{1F4CE} Attached: " + label + " result — ask your question below.");
+  document.getElementById("chatInput").focus();
+}
+async function sendChat() {
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  addChatMsg("user", message);
+
+  let outgoing = message;
+  if (pendingAIContext) { outgoing = pendingAIContext + "\n\nQuestion: " + message; pendingAIContext = null; }
+  chatHistory.push({ role: "user", content: outgoing });
+
+  const provider = document.getElementById("chatProvider").value;
+
+  // Staged loading indicator with a live elapsed-time counter — local
+  // (Ollama) inference especially can take a while, and previously just
+  // sat there with zero feedback until it either replied or timed out.
+  const thinkingEl = document.createElement("div");
+  thinkingEl.className = "chat-msg thinking";
+  document.getElementById("chatMessages").appendChild(thinkingEl);
+  document.getElementById("chatMessages").scrollTop = 999999;
+  const t0 = Date.now();
+  const stages = [
+    { at: 0, label: "Loading model & reading context" },
+    { at: 4, label: "Reading your findings" },
+    { at: 12, label: "Structuring response" },
+  ];
+  const hint = provider === "ollama" ? " — local inference, can take a couple of minutes" : "";
+  const tick = () => {
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    let label = stages[0].label;
+    for (const s of stages) if (secs >= s.at) label = s.label;
+    thinkingEl.textContent = `⟳ ${label}... ${secs}s${secs === 0 ? hint : ""}`;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+
+  let data;
+  try {
+    const r = await fetch(API + "/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ message: outgoing, history: chatHistory.slice(0,-1), provider, mode: chatMode }) });
+    data = await r.json();
+  } catch (e) {
+    data = { error: "Request failed: " + e };
+  } finally {
+    clearInterval(timer);
+    thinkingEl.remove();
+  }
+
+  if (data.reply) { addChatMsg("assistant", (data.provider ? "[" + data.provider + "] " : "") + data.reply); chatHistory.push({ role:"assistant", content:data.reply }); }
+  else { addChatMsg("error", data.error || "Unknown error."); }
+}
+
+/* ---------- Reports ---------- */
+let currentReport = null;
+
+async function loadReports() {
+  try {
+    const list = await getJson("/api/history");
+    const container = document.getElementById("reportsList");
+    if (!list.length) { container.innerHTML = "<div class='status-line'>No scans run yet.</div>"; return; }
+    container.innerHTML = list.map(item => {
+      const d = new Date(item.timestamp * 1000);
+      const time = d.toLocaleString();
+      return `<div class="report-row" onclick="viewReport('${item.id}')">
+        <span class="rtype">${item.type}</span>
+        <span class="rtarget">${item.target}</span>
+        <span class="rtime">${time}</span>
+        <span class="rdel" onclick="event.stopPropagation(); deleteReport('${item.id}')">&#10005;</span>
+      </div>`;
+    }).join("");
+  } catch { document.getElementById("reportsList").innerHTML = "<div class='status-line'>Could not load — is the backend running?</div>"; }
+}
+
+async function viewReport(id) {
+  const entry = await getJson("/api/history/" + id);
+  if (entry.error) return;
+  currentReport = entry;
+  document.getElementById("reportDetailCard").style.display = "block";
+  const d = new Date(entry.timestamp * 1000);
+  document.getElementById("reportDetailMeta").innerHTML =
+    `Type: <b style="color:var(--green)">${entry.type}</b> &nbsp;|&nbsp; Target: <b style="color:var(--text)">${entry.target}</b> &nbsp;|&nbsp; ${d.toLocaleString()}` +
+    (entry.command ? `<br>Command: <code>${entry.command}</code>` : "");
+  document.getElementById("reportDetailBody").textContent = JSON.stringify(entry.data, null, 2);
+  document.getElementById("reportDetailCard").scrollIntoView({ behavior: "smooth" });
+}
+
+function closeReportDetail() {
+  document.getElementById("reportDetailCard").style.display = "none";
+  currentReport = null;
+}
+
+async function deleteReport(id) {
+  await fetch(API + "/api/history/" + id, { method: "DELETE" });
+  loadReports();
+  if (currentReport && currentReport.id === id) closeReportDetail();
+}
+
+function buildReportText(entry) {
+  const d = new Date(entry.timestamp * 1000);
+  let out = "";
+  out += "========================================\n";
+  out += "  AEGIS GRID SCAN REPORT\n";
+  out += "========================================\n\n";
+  out += "Type:      " + entry.type + "\n";
+  out += "Target:    " + entry.target + "\n";
+  out += "Timestamp: " + d.toLocaleString() + "\n";
+  if (entry.command) out += "Command:   " + entry.command + "\n";
+  out += "\n----------------------------------------\n";
+  out += "FINDINGS / RAW DATA\n";
+  out += "----------------------------------------\n\n";
+  out += JSON.stringify(entry.data, null, 2);
+  out += "\n\n----------------------------------------\n";
+  out += "Generated by AEGIS GRID — Unified Security Command Center\n";
+  return out;
+}
+
+function downloadReportTxt(entry) {
+  if (!entry) return;
+  const text = buildReportText(entry);
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `aegisgrid_${entry.type}_${entry.id}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildReportPdfDoc(entry) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const d = new Date(entry.timestamp * 1000);
+  const marginX = 14;
+  let y = 18;
+
+  doc.setFont("courier", "bold"); doc.setFontSize(16); doc.setTextColor(20, 120, 80);
+  doc.text("AEGIS GRID SCAN REPORT", marginX, y); y += 10;
+
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 8;
+
+  doc.setFont("courier", "normal"); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
+  const meta = [
+    ["Type", entry.type],
+    ["Target", entry.target],
+    ["Timestamp", d.toLocaleString()],
+  ];
+  if (entry.command) meta.push(["Command", entry.command]);
+  meta.forEach(([k, v]) => {
+    doc.setFont("courier", "bold"); doc.text(k + ":", marginX, y);
+    doc.setFont("courier", "normal");
+    const wrapped = doc.splitTextToSize(String(v), 150);
+    doc.text(wrapped, marginX + 32, y);
+    y += 6 * wrapped.length;
+  });
+
+  y += 4;
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 8;
+  doc.setFont("courier", "bold"); doc.setFontSize(11); doc.text("FINDINGS / RAW DATA", marginX, y); y += 8;
+
+  doc.setFont("courier", "normal"); doc.setFontSize(8);
+  const jsonText = JSON.stringify(entry.data, null, 2);
+  const lines = doc.splitTextToSize(jsonText, 182);
+  for (const line of lines) {
+    if (y > 280) { doc.addPage(); y = 18; }
+    doc.text(line, marginX, y);
+    y += 4.2;
+  }
+
+  if (y > 270) { doc.addPage(); y = 18; }
+  y += 6;
+  doc.setDrawColor(180); doc.line(marginX, y, 196, y); y += 6;
+  doc.setFont("courier", "italic"); doc.setFontSize(8); doc.setTextColor(120);
+  doc.text("Generated by AEGIS GRID — Unified Security Command Center", marginX, y);
+
+  return doc;
+}
+
+function downloadReportPdf(entry) {
+  if (!entry) return;
+  const doc = buildReportPdfDoc(entry);
+
+  doc.save(`aegisgrid_${entry.type}_${entry.id}.pdf`);
+}
+
+async function emailReport(entry) {
+  if (!entry) return;
+  const to = document.getElementById("emailReportInput").value.trim();
+  const statusEl = document.getElementById("emailReportStatus");
+  if (!to) { statusEl.textContent = "Enter an email address first."; return; }
+  statusEl.textContent = "Sending...";
+
+  const doc = buildReportPdfDoc(entry);
+  const pdfBase64 = doc.output("datauristring").split(",")[1];
+  const bodyText = buildReportText(entry);
+  const filename = `aegisgrid_${entry.type}_${entry.id}.pdf`;
+
+  const r = await post("/api/reports/email", {
+    to_email: to,
+    subject: `AEGIS GRID report — ${entry.type} — ${entry.target}`,
+    body_text: bodyText,
+    pdf_base64: pdfBase64,
+    filename: filename,
+  });
+  statusEl.textContent = r.sent ? `Sent to ${to}.` : (r.error || "Failed to send.");
+}
+</script>
+
+</body>
+</html>

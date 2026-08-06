@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+requests>=2.31
+pydantic>=2.6
+anthropic>=0.34
+psutil>=5.9
+dnspython>=2.6
