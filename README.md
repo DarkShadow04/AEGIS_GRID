@@ -321,12 +321,3 @@ See `FINDINGS.md`. Highlights: hardcoded live API keys were found in your
 old `AbuseLPDB`/`Dark_Console` repos (rotate those); a header-checker bug
 that reported every security header as missing on servers using lowercase
 header names was caught via live testing against `github.com` and fixed.
-
-## Next steps you may want
-
-- Auth in front of the API before exposing this beyond localhost
-- Persist scan history so Security Sessions shows trend-over-time
-- Docker Compose for backend + frontend together
-- Live-test Gemini/OpenAI against your real keys and quotas
-  once deployed (couldn't be done from this sandbox — no external network,
-  no keys)
